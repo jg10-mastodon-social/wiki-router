@@ -1,0 +1,212 @@
+"""Fetch a URL and extract its metadata."""
+
+import html as html_module
+import urllib.error
+import urllib.request
+from dataclasses import dataclass
+from html.parser import HTMLParser
+from urllib.parse import urljoin, urlsplit
+
+FETCH_TIMEOUT = 15
+MAX_FETCH_BYTES = 600_000
+USER_AGENT = "Mozilla/5.0 (compatible; wiki-router/1.0)"
+
+SUPPORTED_TYPES = ("text/html", "application/xhtml+xml")
+TITLE_SEPARATORS = (" | ", " - ", " — ")
+NOISY_PHRASES = (
+    "just a moment",
+    "access denied",
+    "attention required",
+    "redirecting",
+    "page not found",
+)
+MAX_TITLE = 120
+MAX_SUFFIX = 20
+
+
+@dataclass(frozen=True)
+class FetchResult:
+    ok: bool
+    final_url: str
+    title: str
+    description: str
+    source: str
+    creator: str
+    date: str
+    isbn: str
+    canonical: str
+    title_noisy: bool
+    error: str
+
+    @classmethod
+    def disabled(cls, url: str, title: str = "") -> "FetchResult":
+        return cls(
+            ok=False,
+            final_url=url,
+            title=title,
+            description="",
+            source="",
+            creator="",
+            date="",
+            isbn="",
+            canonical="",
+            title_noisy=False,
+            error="fetch disabled",
+        )
+
+    @classmethod
+    def failed(cls, url: str, error: str) -> "FetchResult":
+        return cls(
+            ok=False,
+            final_url=url,
+            title="",
+            description="",
+            source="",
+            creator="",
+            date="",
+            isbn="",
+            canonical="",
+            title_noisy=False,
+            error=error,
+        )
+
+
+class _MetaParser(HTMLParser):
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.meta = {}
+        self.canonical = ""
+        self.title_parts = []
+        self._in_title = False
+
+    def handle_starttag(self, tag, attrs):
+        values = {
+            name.lower(): value or "" for name, value in attrs
+        }
+        if tag == "title":
+            self._in_title = True
+        elif tag == "meta":
+            key = values.get("property") or values.get("name")
+            if key and key.lower() not in self.meta:
+                self.meta[key.lower()] = values.get("content", "")
+        elif tag == "link":
+            rel = values.get("rel", "").lower().split()
+            if "canonical" in rel and not self.canonical:
+                self.canonical = values.get("href", "")
+
+    def handle_endtag(self, tag):
+        if tag == "title":
+            self._in_title = False
+
+    def handle_data(self, data):
+        if self._in_title:
+            self.title_parts.append(data)
+
+
+def http_get(url: str, timeout: int, limit: int) -> tuple[str, str, bytes]:
+    request = urllib.request.Request(
+        url,
+        headers={
+            "User-Agent": USER_AGENT,
+            "Accept": "text/html",
+            "Accept-Encoding": "identity",
+        },
+    )
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        body = response.read(limit)
+        final_url = response.geturl()
+        content_type = response.headers.get("Content-Type", "")
+    return final_url, content_type, body
+
+
+def extract(html: str, base_url: str) -> dict:
+    parser = _MetaParser()
+    parser.feed(html)
+    parser.close()
+
+    def meta(key: str) -> str:
+        return html_module.unescape(parser.meta.get(key, "")).strip()
+
+    title = (
+        meta("og:title")
+        or meta("twitter:title")
+        or html_module.unescape("".join(parser.title_parts)).strip()
+    )
+    description = meta("og:description") or meta("description")
+    canonical = parser.canonical
+    if canonical:
+        canonical = urljoin(base_url, canonical)
+
+    return {
+        "title": title,
+        "description": description,
+        "canonical": canonical,
+    }
+
+
+def clean_title(title: str, url: str) -> str:
+    title = title.strip()
+    host = (urlsplit(url).hostname or "").lower()
+
+    for separator in TITLE_SEPARATORS:
+        index = title.rfind(separator)
+        if index == -1:
+            continue
+        suffix = title[index + len(separator):].strip()
+        if not suffix or len(suffix) > MAX_SUFFIX:
+            continue
+        words = _words(suffix)
+        if words and all(word in host for word in words):
+            return title[:index].strip()
+
+    return title
+
+
+def title_is_noisy(title: str, url: str) -> bool:
+    if not title or len(title) > MAX_TITLE:
+        return True
+    lowered = title.lower()
+    return any(phrase in lowered for phrase in NOISY_PHRASES)
+
+
+def fetch(
+    url: str, *, timeout: int = FETCH_TIMEOUT, getter=http_get
+) -> FetchResult:
+    try:
+        final_url, content_type, body = getter(url, timeout, MAX_FETCH_BYTES)
+    except TimeoutError:
+        return FetchResult.failed(url, "timed out")
+    except urllib.error.HTTPError as error:
+        return FetchResult.failed(url, f"HTTP {error.code}")
+    except urllib.error.URLError:
+        return FetchResult.failed(url, "cannot reach host")
+    except Exception:
+        return FetchResult.failed(url, "fetch error")
+
+    media_type = content_type.split(";")[0].strip().lower()
+    if media_type not in SUPPORTED_TYPES:
+        return FetchResult.failed(url, "unsupported content type")
+
+    parsed = extract(body.decode("utf-8", errors="replace"), final_url)
+    title = clean_title(parsed["title"], final_url)
+
+    return FetchResult(
+        ok=True,
+        final_url=final_url,
+        title=title,
+        description=parsed["description"],
+        source="html",
+        creator="",
+        date="",
+        isbn="",
+        canonical=parsed["canonical"],
+        title_noisy=title_is_noisy(title, final_url),
+        error="",
+    )
+
+
+def _words(text: str) -> list[str]:
+    cleaned = "".join(
+        char if char.isalnum() else " " for char in text.lower()
+    )
+    return cleaned.split()

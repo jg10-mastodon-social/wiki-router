@@ -4,29 +4,27 @@ from collections.abc import Sequence
 from urllib.parse import unquote, urlsplit
 
 from . import CONTRACT
+from .fetch import FetchResult
 from .score import Candidate, Document, Query, rank
 from .text import tokenize
 
 
-def fetched_block(
-    url: str,
-    *,
-    title: str = "",
-    description: str = "",
-    fetched: bool = False,
-    error: str = "",
-) -> dict:
+def fetched_block(url: str, *, fetched: FetchResult) -> dict:
+    title = fetched.title
+    if not fetched.ok and not title:
+        title = _title_from_url(url)
+
     return {
-        "ok": fetched,
-        "title": title or _title_from_url(url),
-        "description": description,
-        "source": "",
-        "creator": "",
-        "date": "",
-        "isbn": "",
-        "canonical": "",
-        "title_noisy": False,
-        "error": error,
+        "ok": fetched.ok,
+        "title": title,
+        "description": fetched.description,
+        "source": fetched.source,
+        "creator": fetched.creator,
+        "date": fetched.date,
+        "isbn": fetched.isbn,
+        "canonical": fetched.canonical,
+        "title_noisy": fetched.title_noisy,
+        "error": fetched.error,
     }
 
 
@@ -34,14 +32,11 @@ def route_payload(
     documents: Sequence[Document],
     url: str,
     *,
-    title: str = "",
-    description: str = "",
+    fetched: FetchResult,
     context: str = "",
     top: int = 5,
     wiki: str = "",
     exclude_wiki: str = "",
-    fetch_ok: bool = False,
-    fetch_error: str = "",
 ) -> dict:
     selected = [
         document
@@ -49,19 +44,13 @@ def route_payload(
         if (not wiki or document.wiki == wiki)
         and (not exclude_wiki or document.wiki != exclude_wiki)
     ]
-    fetched = fetched_block(
-        url,
-        title=title,
-        description=description,
-        fetched=fetch_ok,
-        error=fetch_error,
-    )
+    block = fetched_block(url, fetched=fetched)
     candidates = rank(
         selected,
         Query(
             url=url,
-            title=title,
-            description=description,
+            title=block["title"],
+            description=block["description"],
             context=context,
         ),
         top=len(selected),
@@ -73,9 +62,9 @@ def route_payload(
     return {
         "contract": CONTRACT,
         "url": url,
-        "final_url": url,
-        "fetched": fetched,
-        "reliability": _reliability(fetched),
+        "final_url": fetched.final_url,
+        "fetched": block,
+        "reliability": _reliability(block),
         "candidates": [_candidate(candidate) for candidate in candidates],
     }
 

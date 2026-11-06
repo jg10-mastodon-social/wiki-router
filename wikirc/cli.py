@@ -2,9 +2,11 @@ import argparse
 import json
 import sys
 from collections.abc import Sequence
+from dataclasses import replace
 
 from . import CONTRACT, __version__, router, store
 from .config import ConfigError, load_config
+from .fetch import FetchResult, fetch
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -157,18 +159,27 @@ def _run_route(args: argparse.Namespace) -> int:
     if store.is_stale(config.notes, config.pod_base, config.state):
         print("warning: index is stale; run build", file=sys.stderr)
 
-    fetched = not args.no_fetch and bool(args.title)
+    if args.no_fetch:
+        fetched = FetchResult.disabled(args.url)
+    else:
+        fetched = fetch(args.url)
+
+    overrides = {}
+    if args.title:
+        overrides["title"] = args.title
+    if args.description:
+        overrides["description"] = args.description
+    if overrides:
+        fetched = replace(fetched, **overrides)
+
     payload = router.route_payload(
         index.documents,
         args.url,
-        title=args.title,
-        description=args.description,
+        fetched=fetched,
         context=args.context,
         top=args.top,
         wiki=args.wiki,
         exclude_wiki=args.exclude_wiki,
-        fetch_ok=fetched,
-        fetch_error="" if fetched else "fetch disabled",
     )
 
     if args.as_json:

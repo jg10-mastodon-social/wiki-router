@@ -5,12 +5,20 @@ import shutil
 import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
+from dataclasses import replace
 from pathlib import Path
 from unittest import mock
 
 from wikirc.cli import build_parser, main
+from wikirc.fetch import FetchResult
 
 FIXTURES = Path(__file__).parent / "fixtures" / "corpus"
+
+
+def fetched(url, **overrides):
+    fields = {"ok": True, "error": "", "source": "html"}
+    fields.update(overrides)
+    return replace(FetchResult.disabled(url), **fields)
 
 
 class ParserTests(unittest.TestCase):
@@ -182,7 +190,7 @@ class BuildCommandTests(unittest.TestCase):
 
 
 class RouteCommandTests(unittest.TestCase):
-    def _run(self, args, notes, state):
+    def _run_with(self, args, notes, state, fetcher):
         environ = {
             "WIKI_ROUTER_NOTES": str(notes),
             "WIKI_ROUTER_HOME": str(state),
@@ -190,9 +198,20 @@ class RouteCommandTests(unittest.TestCase):
         out = io.StringIO()
         err = io.StringIO()
         with mock.patch.dict(os.environ, environ, clear=True):
-            with redirect_stdout(out), redirect_stderr(err):
-                code = main(args)
-        return code, out.getvalue(), err.getvalue()
+            with mock.patch(
+                "wikirc.cli.fetch", side_effect=fetcher
+            ) as patched:
+                with redirect_stdout(out), redirect_stderr(err):
+                    code = main(args)
+        return code, out.getvalue(), err.getvalue(), patched
+
+    def _run(self, args, notes, state, fetcher=None):
+        if fetcher is None:
+            fetcher = lambda url, **kwargs: fetched(url)
+        code, out, err, _ = self._run_with(
+            args, notes, state, fetcher
+        )
+        return code, out, err
 
     def test_route_json_on_a_built_corpus(self):
         with tempfile.TemporaryDirectory() as state:
@@ -314,6 +333,75 @@ class RouteCommandTests(unittest.TestCase):
             {candidate["wiki"] for candidate in json.loads(out)["candidates"]},
             {"cycling"},
         )
+
+    def test_route_uses_the_fetcher_by_default(self):
+        with tempfile.TemporaryDirectory() as state:
+            self._run(["build"], FIXTURES, state)
+            code, out, err, fetcher = self._run_with(
+                ["route", "https://example.com/watering/", "--json"],
+                FIXTURES,
+                state,
+                lambda url, **kwargs: fetched(url, title="Watering"),
+            )
+
+        payload = json.loads(out)
+        fetcher.assert_called_once_with("https://example.com/watering/")
+        self.assertEqual(code, 0)
+        self.assertEqual(err, "")
+        self.assertTrue(payload["fetched"]["ok"])
+        self.assertEqual(payload["fetched"]["source"], "html")
+        self.assertEqual(
+            payload["final_url"], "https://example.com/watering/"
+        )
+        self.assertEqual(payload["fetched"]["title"], "Watering")
+        self.assertEqual(payload["reliability"], "ok")
+
+    def test_route_no_fetch_does_not_call_the_fetcher(self):
+        with tempfile.TemporaryDirectory() as state:
+            self._run(["build"], FIXTURES, state)
+            code, out, err, fetcher = self._run_with(
+                [
+                    "route",
+                    "https://example.com/watering/",
+                    "--no-fetch",
+                    "--json",
+                ],
+                FIXTURES,
+                state,
+                lambda url, **kwargs: fetched(url),
+            )
+
+        payload = json.loads(out)
+        fetcher.assert_not_called()
+        self.assertEqual(code, 0)
+        self.assertEqual(err, "")
+        self.assertFalse(payload["fetched"]["ok"])
+        self.assertEqual(payload["fetched"]["error"], "fetch disabled")
+
+    def test_title_overrides_a_fetched_title(self):
+        with tempfile.TemporaryDirectory() as state:
+            self._run(["build"], FIXTURES, state)
+            code, out, err = self._run(
+                [
+                    "route",
+                    "https://example.com/watering/",
+                    "--title",
+                    "Watering",
+                    "--json",
+                ],
+                FIXTURES,
+                state,
+                fetcher=lambda url, **kwargs: fetched(
+                    url, title="Just a moment...", title_noisy=True
+                ),
+            )
+
+        payload = json.loads(out)
+        self.assertEqual(code, 0)
+        self.assertEqual(err, "")
+        self.assertEqual(payload["fetched"]["title"], "Watering")
+        self.assertEqual(payload["fetched"]["error"], "")
+        self.assertEqual(payload["reliability"], "ok")
 
     def test_route_without_an_index_reports_one(self):
         with tempfile.TemporaryDirectory() as state:

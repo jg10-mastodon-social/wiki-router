@@ -1,7 +1,9 @@
 import json
 import unittest
+from dataclasses import replace
 
 from wikirc import CONTRACT
+from wikirc.fetch import FetchResult
 from wikirc.router import fetched_block, route_payload
 from wikirc.score import Document, Query, rank
 from wikirc.text import tokenize
@@ -89,6 +91,14 @@ def documents():
     ]
 
 
+def fetched(url="https://example.com/soil/", **overrides):
+    return replace(FetchResult.disabled(url), **overrides)
+
+
+def disabled(url="https://example.com/soil/", **overrides):
+    return replace(FetchResult.disabled(url), **overrides)
+
+
 def _keys(value):
     if isinstance(value, dict):
         for key, item in value.items():
@@ -101,7 +111,9 @@ def _keys(value):
 
 class FetchedBlockTests(unittest.TestCase):
     def test_defaults_describe_a_fetch_that_did_not_happen(self):
-        block = fetched_block("https://example.com/watering/")
+        block = fetched_block(
+            "https://example.com/watering/", fetched=disabled()
+        )
 
         self.assertEqual(list(block), FETCHED_KEYS)
         self.assertFalse(block["ok"])
@@ -112,11 +124,12 @@ class FetchedBlockTests(unittest.TestCase):
         self.assertEqual(block["isbn"], "")
         self.assertEqual(block["canonical"], "")
         self.assertFalse(block["title_noisy"])
-        self.assertEqual(block["error"], "")
+        self.assertEqual(block["error"], "fetch disabled")
 
     def test_supplied_title_is_used_as_is(self):
         block = fetched_block(
-            "https://example.com/watering/", title="Watering"
+            "https://example.com/watering/",
+            fetched=disabled(title="Watering"),
         )
 
         self.assertEqual(block["title"], "Watering")
@@ -124,8 +137,7 @@ class FetchedBlockTests(unittest.TestCase):
     def test_description_and_error_pass_through(self):
         block = fetched_block(
             "https://example.com/watering/",
-            description="A note",
-            error="fetch disabled",
+            fetched=fetched(description="A note"),
         )
 
         self.assertEqual(block["description"], "A note")
@@ -133,25 +145,30 @@ class FetchedBlockTests(unittest.TestCase):
 
     def test_missing_title_falls_back_to_the_slug_text(self):
         block = fetched_block(
-            "https://example.com/canal-solar-power-project/"
+            "https://example.com/canal-solar-power-project/",
+            fetched=disabled(),
         )
 
         self.assertEqual(block["title"], "canal solar power project")
 
     def test_slug_title_decodes_and_replaces_separators(self):
-        block = fetched_block("https://example.com/my_page%20notes.html")
+        block = fetched_block(
+            "https://example.com/my_page%20notes.html", fetched=disabled()
+        )
 
         self.assertEqual(block["title"], "my page notes html")
 
     def test_title_is_never_empty(self):
-        block = fetched_block("https://example.com/")
+        block = fetched_block("https://example.com/", fetched=disabled())
 
         self.assertTrue(block["title"])
 
 
 class PayloadShapeTests(unittest.TestCase):
     def test_payload_has_exactly_the_documented_keys(self):
-        payload = route_payload(documents(), "https://example.com/soil/")
+        payload = route_payload(
+            documents(), "https://example.com/soil/", fetched=disabled()
+        )
 
         self.assertEqual(list(payload), PAYLOAD_KEYS)
         self.assertEqual(list(payload["fetched"]), FETCHED_KEYS)
@@ -159,13 +176,17 @@ class PayloadShapeTests(unittest.TestCase):
         self.assertEqual(CONTRACT, 1)
 
     def test_url_and_final_url_are_the_input_url(self):
-        payload = route_payload(documents(), "https://example.com/soil/")
+        payload = route_payload(
+            documents(), "https://example.com/soil/", fetched=disabled()
+        )
 
         self.assertEqual(payload["url"], "https://example.com/soil/")
         self.assertEqual(payload["final_url"], "https://example.com/soil/")
 
     def test_payload_serialises_without_a_local_key(self):
-        payload = route_payload(documents(), "https://example.com/soil/")
+        payload = route_payload(
+            documents(), "https://example.com/soil/", fetched=disabled()
+        )
 
         encoded = json.dumps(payload)
 
@@ -175,7 +196,9 @@ class PayloadShapeTests(unittest.TestCase):
 
 class ReliabilityTests(unittest.TestCase):
     def test_no_fetch_is_low_reliability(self):
-        payload = route_payload(documents(), "https://example.com/soil/")
+        payload = route_payload(
+            documents(), "https://example.com/soil/", fetched=disabled()
+        )
         self.assertFalse(payload["fetched"]["ok"])
         self.assertEqual(payload["reliability"], "low")
 
@@ -183,7 +206,7 @@ class ReliabilityTests(unittest.TestCase):
         payload = route_payload(
             documents(),
             "https://example.com/soil/",
-            fetch_error="fetch disabled",
+            fetched=disabled(),
         )
         self.assertEqual(payload["fetched"]["error"], "fetch disabled")
 
@@ -191,18 +214,65 @@ class ReliabilityTests(unittest.TestCase):
         payload = route_payload(
             documents(),
             "https://example.com/soil/",
-            title="Soil care",
-            fetch_ok=True,
+            fetched=fetched(ok=True, title="Soil care", source="html"),
         )
 
         self.assertTrue(payload["fetched"]["ok"])
         self.assertEqual(payload["fetched"]["title"], "Soil care")
         self.assertEqual(payload["reliability"], "ok")
 
+    def test_ok_without_a_tokenisable_title_is_low(self):
+        payload = route_payload(
+            documents(),
+            "https://example.com/",
+            fetched=fetched(ok=True, title="the", source="html"),
+        )
+
+        self.assertEqual(payload["reliability"], "low")
+
+    def test_fetched_block_is_filled_field_by_field(self):
+        result = fetched(
+            "https://example.com/soil/",
+            ok=True,
+            final_url="https://example.com/final/",
+            title="Soil care",
+            description="A note",
+            source="html",
+            creator="Ada",
+            date="2024-01-01",
+            isbn="9780000000000",
+            canonical="https://example.com/final/",
+            title_noisy=True,
+            error="",
+        )
+
+        payload = route_payload(
+            documents(), "https://example.com/soil/", fetched=result
+        )
+
+        self.assertEqual(payload["final_url"], "https://example.com/final/")
+        self.assertEqual(
+            payload["fetched"],
+            {
+                "ok": True,
+                "title": "Soil care",
+                "description": "A note",
+                "source": "html",
+                "creator": "Ada",
+                "date": "2024-01-01",
+                "isbn": "9780000000000",
+                "canonical": "https://example.com/final/",
+                "title_noisy": True,
+                "error": "",
+            },
+        )
+
 
 class CandidateTests(unittest.TestCase):
     def test_candidates_carry_headings_and_summary(self):
-        payload = route_payload(documents(), "https://example.com/soil/")
+        payload = route_payload(
+            documents(), "https://example.com/soil/", fetched=disabled()
+        )
 
         candidate = payload["candidates"][0]
 
@@ -225,12 +295,16 @@ class CandidateTests(unittest.TestCase):
             ),
         ]
 
-        payload = route_payload(corpus, "https://example.com/soil/", top=1)
+        payload = route_payload(
+            corpus, "https://example.com/soil/", fetched=disabled(), top=1
+        )
 
         self.assertEqual(len(payload["candidates"]), 1)
 
     def test_zero_score_candidates_are_dropped_but_rank_keeps_them(self):
-        payload = route_payload(documents(), "https://example.com/soil/")
+        payload = route_payload(
+            documents(), "https://example.com/soil/", fetched=disabled()
+        )
 
         self.assertEqual(
             [candidate["id"] for candidate in payload["candidates"]],
@@ -243,14 +317,19 @@ class CandidateTests(unittest.TestCase):
 
     def test_no_match_yields_an_empty_candidate_list(self):
         payload = route_payload(
-            documents(), "https://example.com/unknown-topic/"
+            documents(),
+            "https://example.com/unknown-topic/",
+            fetched=disabled("https://example.com/unknown-topic/"),
         )
 
         self.assertEqual(payload["candidates"], [])
 
     def test_wiki_filters_before_ranking(self):
         payload = route_payload(
-            documents(), "https://example.com/commute/", wiki="cycling"
+            documents(),
+            "https://example.com/commute/",
+            fetched=disabled("https://example.com/commute/"),
+            wiki="cycling",
         )
 
         self.assertEqual(
@@ -262,6 +341,7 @@ class CandidateTests(unittest.TestCase):
         payload = route_payload(
             documents(),
             "https://example.com/commute/",
+            fetched=disabled("https://example.com/commute/"),
             exclude_wiki="garden",
         )
 
