@@ -1,6 +1,7 @@
 import io
 import json
 import os
+import shutil
 import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
@@ -174,6 +175,187 @@ class BuildCommandTests(unittest.TestCase):
         with mock.patch.dict(os.environ, {}, clear=True):
             with redirect_stdout(out), redirect_stderr(err):
                 code = main(["build"])
+
+        self.assertEqual(code, 2)
+        self.assertEqual(out.getvalue(), "")
+        self.assertIn("WIKI_ROUTER_NOTES", err.getvalue())
+
+
+class RouteCommandTests(unittest.TestCase):
+    def _run(self, args, notes, state):
+        environ = {
+            "WIKI_ROUTER_NOTES": str(notes),
+            "WIKI_ROUTER_HOME": str(state),
+        }
+        out = io.StringIO()
+        err = io.StringIO()
+        with mock.patch.dict(os.environ, environ, clear=True):
+            with redirect_stdout(out), redirect_stderr(err):
+                code = main(args)
+        return code, out.getvalue(), err.getvalue()
+
+    def test_route_json_on_a_built_corpus(self):
+        with tempfile.TemporaryDirectory() as state:
+            code, _, err = self._run(["build"], FIXTURES, state)
+            self.assertEqual(code, 0)
+            self.assertEqual(err, "")
+
+            code, out, err = self._run(
+                [
+                    "route",
+                    "https://example.com/watering/",
+                    "--no-fetch",
+                    "--json",
+                ],
+                FIXTURES,
+                state,
+            )
+
+        payload = json.loads(out)
+        self.assertEqual(code, 0)
+        self.assertEqual(err, "")
+        self.assertEqual(payload["contract"], 1)
+        self.assertFalse(payload["fetched"]["ok"])
+        self.assertEqual(payload["fetched"]["error"], "fetch disabled")
+        self.assertEqual(payload["reliability"], "low")
+        self.assertTrue(payload["candidates"])
+        self.assertNotIn(str(FIXTURES), out)
+
+    def test_route_json_with_a_title_reports_ok(self):
+        with tempfile.TemporaryDirectory() as state:
+            self._run(["build"], FIXTURES, state)
+            code, out, err = self._run(
+                [
+                    "route",
+                    "https://example.com/watering/",
+                    "--title",
+                    "Watering",
+                    "--json",
+                ],
+                FIXTURES,
+                state,
+            )
+
+        payload = json.loads(out)
+        self.assertEqual(code, 0)
+        self.assertEqual(err, "")
+        self.assertTrue(payload["fetched"]["ok"])
+        self.assertEqual(payload["fetched"]["title"], "Watering")
+        self.assertEqual(payload["fetched"]["error"], "")
+        self.assertEqual(payload["reliability"], "ok")
+
+    def test_route_plain_reports_url_title_and_candidates(self):
+        with tempfile.TemporaryDirectory() as state:
+            self._run(["build"], FIXTURES, state)
+            code, out, err = self._run(
+                [
+                    "route",
+                    "https://example.com/watering/",
+                    "--title",
+                    "Watering",
+                ],
+                FIXTURES,
+                state,
+            )
+
+        lines = out.splitlines()
+        self.assertEqual(code, 0)
+        self.assertEqual(err, "")
+        self.assertEqual(lines[0], "url: https://example.com/watering/")
+        self.assertEqual(lines[1], "title: Watering")
+        self.assertEqual(lines[2], "reliability: ok")
+        self.assertIn("garden/Watering", out)
+        self.assertIn("watering.md", out)
+
+    def test_route_top_truncates(self):
+        with tempfile.TemporaryDirectory() as state:
+            self._run(["build"], FIXTURES, state)
+            code, out, _ = self._run(
+                ["route", "https://example.com/watering/", "--top", "1", "--json"],
+                FIXTURES,
+                state,
+            )
+
+        self.assertEqual(code, 0)
+        self.assertEqual(len(json.loads(out)["candidates"]), 1)
+
+    def test_route_wiki_filters_candidates(self):
+        with tempfile.TemporaryDirectory() as state:
+            self._run(["build"], FIXTURES, state)
+            code, out, _ = self._run(
+                ["route", "https://example.com/chain/", "--wiki", "cycling", "--json"],
+                FIXTURES,
+                state,
+            )
+
+        self.assertEqual(code, 0)
+        self.assertEqual(
+            {candidate["wiki"] for candidate in json.loads(out)["candidates"]},
+            {"cycling"},
+        )
+
+    def test_route_exclude_wiki_drops_one_wiki(self):
+        with tempfile.TemporaryDirectory() as state:
+            self._run(["build"], FIXTURES, state)
+            code, out, _ = self._run(
+                [
+                    "route",
+                    "https://example.com/chain/",
+                    "--exclude-wiki",
+                    "garden",
+                    "--json",
+                ],
+                FIXTURES,
+                state,
+            )
+
+        self.assertEqual(code, 0)
+        self.assertEqual(
+            {candidate["wiki"] for candidate in json.loads(out)["candidates"]},
+            {"cycling"},
+        )
+
+    def test_route_without_an_index_reports_one(self):
+        with tempfile.TemporaryDirectory() as state:
+            code, out, err = self._run(
+                ["route", "https://example.com/watering/", "--json"],
+                FIXTURES,
+                state,
+            )
+
+        self.assertEqual(code, 1)
+        self.assertEqual(out, "")
+        self.assertEqual(err, "routing index missing: run build\n")
+
+    def test_route_with_a_stale_index_warns_and_still_routes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            notes = Path(tmp) / "notes"
+            shutil.copytree(FIXTURES, notes)
+            state = Path(tmp) / "state"
+            code, _, _ = self._run(["build"], notes, state)
+            self.assertEqual(code, 0)
+
+            page = notes / "garden" / "topics" / "soil.md"
+            stamp = 1_700_000_000_000_000_000
+            os.utime(page, ns=(stamp, stamp))
+
+            code, out, err = self._run(
+                ["route", "https://example.com/watering/", "--json"],
+                notes,
+                state,
+            )
+
+        payload = json.loads(out)
+        self.assertEqual(code, 0)
+        self.assertEqual(err, "warning: index is stale; run build\n")
+        self.assertTrue(payload["candidates"])
+
+    def test_route_without_environment_reports_two(self):
+        out = io.StringIO()
+        err = io.StringIO()
+        with mock.patch.dict(os.environ, {}, clear=True):
+            with redirect_stdout(out), redirect_stderr(err):
+                code = main(["route", "https://example.com/watering/", "--json"])
 
         self.assertEqual(code, 2)
         self.assertEqual(out.getvalue(), "")

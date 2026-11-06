@@ -3,7 +3,7 @@ import json
 import sys
 from collections.abc import Sequence
 
-from . import CONTRACT, __version__, store
+from . import CONTRACT, __version__, router, store
 from .config import ConfigError, load_config
 
 
@@ -35,6 +35,26 @@ def build_parser() -> argparse.ArgumentParser:
         "--json", action="store_true", dest="as_json", help="print JSON"
     )
 
+    route = subparsers.add_parser(
+        "route", help="route a URL against the routing index"
+    )
+    route.add_argument("url")
+    route.add_argument("--top", type=int, default=5)
+    route.add_argument("--wiki", default="")
+    route.add_argument("--exclude-wiki", default="", dest="exclude_wiki")
+    route.add_argument("--context", default="")
+    route.add_argument("--title", default="")
+    route.add_argument("--description", default="")
+    route.add_argument(
+        "--no-fetch",
+        action="store_true",
+        dest="no_fetch",
+        help="describe a fetch that did not happen",
+    )
+    route.add_argument(
+        "--json", action="store_true", dest="as_json", help="print JSON"
+    )
+
     return parser
 
 
@@ -47,6 +67,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _print_config(args.as_json)
     if args.command == "build":
         return _run_build(args.check, args.as_json)
+    if args.command == "route":
+        return _run_route(args)
 
     raise AssertionError(f"unhandled command: {args.command}")
 
@@ -118,3 +140,47 @@ def _build_report(payload: store.IndexPayload, stale: bool) -> dict:
         "stale": stale,
     }
 
+
+def _run_route(args: argparse.Namespace) -> int:
+    try:
+        config = load_config()
+    except ConfigError as error:
+        print(f"wiki-router: {error}", file=sys.stderr)
+        return 2
+
+    try:
+        index = store.load(config.state)
+    except FileNotFoundError:
+        print("routing index missing: run build", file=sys.stderr)
+        return 1
+
+    if store.is_stale(config.notes, config.pod_base, config.state):
+        print("warning: index is stale; run build", file=sys.stderr)
+
+    fetched = not args.no_fetch and bool(args.title)
+    payload = router.route_payload(
+        index.documents,
+        args.url,
+        title=args.title,
+        description=args.description,
+        context=args.context,
+        top=args.top,
+        wiki=args.wiki,
+        exclude_wiki=args.exclude_wiki,
+        fetch_ok=fetched,
+        fetch_error="" if fetched else "fetch disabled",
+    )
+
+    if args.as_json:
+        print(json.dumps(payload))
+        return 0
+
+    print(f"url: {payload['url']}")
+    print(f"title: {payload['fetched']['title']}")
+    print(f"reliability: {payload['reliability']}")
+    for candidate in payload["candidates"]:
+        print(
+            f"{candidate['score']:.4f} "
+            f"{candidate['wiki']}/{candidate['label']} ({candidate['id']})"
+        )
+    return 0

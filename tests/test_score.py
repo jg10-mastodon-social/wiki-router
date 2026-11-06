@@ -20,6 +20,7 @@ def make_document(
     headings=(),
     links=(),
     text="",
+    summary="",
 ):
     return Document(
         id=id,
@@ -30,6 +31,7 @@ def make_document(
         headings=headings,
         links=links,
         text=text,
+        summary=summary,
     )
 
 
@@ -254,6 +256,20 @@ class LimitTests(unittest.TestCase):
         query = Query(url="https://example.com/")
 
         self.assertEqual(rank([document], query), [])
+
+
+class CandidateMetadataTests(unittest.TestCase):
+    def test_candidate_carries_headings_and_summary(self):
+        document = make_document(
+            headings=("Solar power", "Panels"),
+            summary="The opening line.",
+        )
+        query = Query(url="https://example.com/solar/")
+
+        candidate = rank([document], query)[0]
+
+        self.assertEqual(candidate.headings, ("Solar power", "Panels"))
+        self.assertEqual(candidate.summary, "The opening line.")
 
 
 class MatchedTests(unittest.TestCase):

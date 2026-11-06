@@ -42,6 +42,8 @@ class Candidate:
     already_linked: bool
     heading_match: bool
     suggested_section: str | None
+    headings: tuple[str, ...]
+    summary: str
 
 
 def rank(
@@ -79,6 +81,8 @@ def rank(
                 already_linked=_already_linked(document, query.url),
                 heading_match=heading_match,
                 suggested_section=suggested,
+                headings=document.headings,
+                summary=document.summary,
             )
         )
 
