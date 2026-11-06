@@ -1,0 +1,10 @@
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+
+<watering.md> rdfs:label "Watering" .
+<Pruning%20tomatoes.md> rdfs:label "/Folder", "Pruning Tomatoes" .
+</topics/soil.md> rdfs:label "Soil" .
+<https://pod.example.com/pod/notes/garden/topics/solar.md> rdfs:label "Solar" .
+<https://pod.example.com/elsewhere/ghost.md> rdfs:label "Ghost" .
+<missing.md> rdfs:label "Missing" .
+<folder-only.md> rdfs:label "/Only Folder" .
+<comment-only.md> rdfs:comment "No label" .

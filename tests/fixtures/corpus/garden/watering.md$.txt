@@ -1,0 +1,16 @@
+# Watering
+
+A note about [seeds](https://pod.example.com/pod/notes/garden/seeds.md)
+and [seeds again](https://pod.example.com/pod/notes/garden/seeds.md).
+
+## Watering
+
+See https://pod.example.com/pod/notes/garden/watering.md and a relative [tool](tools.md).
+
+### Deep bed
+
+#### Fine print
+
+##### Detail
+
+###### Last

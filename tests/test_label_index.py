@@ -134,7 +134,7 @@ class ParseLabelIndexTests(unittest.TestCase):
 
 
 class LoadLabelIndexTests(unittest.TestCase):
-    FIXTURE = Path(__file__).parent / "fixtures" / "corpus" / "label-index.ttl"
+    FIXTURE = Path(__file__).parent / "fixtures" / "parsing" / "label-index.ttl"
 
     def test_load_matches_parse_on_same_text(self):
         text = self.FIXTURE.read_text(encoding="utf-8")
