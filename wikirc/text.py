@@ -141,6 +141,8 @@ def stem(word: str) -> str:
         result = result[:-3] + "y"
     elif result.endswith("sses"):
         result = result[:-2]
+    elif result.endswith("oes") and len(result) > 4:
+        result = result[:-2]
     elif result.endswith("s") and not result.endswith(("ss", "us", "is")):
         result = result[:-1]
 

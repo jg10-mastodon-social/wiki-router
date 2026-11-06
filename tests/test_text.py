@@ -23,6 +23,9 @@ class StemTests(unittest.TestCase):
     def test_stem_never_drops_below_three_characters(self):
         self.assertEqual(stem("sing"), "sing")
 
+    def test_oes_becomes_o(self):
+        self.assertEqual(stem("tomatoes"), "tomato")
+
 
 class StopwordTests(unittest.TestCase):
     def test_common_word_is_a_stopword(self):
@@ -49,14 +52,14 @@ class TokenizeTests(unittest.TestCase):
         )
 
     def test_bigrams_use_unstemmed_adjacent_words(self):
-        counts = tokenize("spaced repetition")
+        counts = tokenize("pruning tomatoes")
 
-        self.assertEqual(counts["spaced repetition"], 1)
+        self.assertEqual(counts["pruning tomatoes"], 1)
 
     def test_bigrams_are_omitted_when_disabled(self):
         self.assertEqual(
-            tokenize("spaced repetition", bigrams=False),
-            {"spac": 1, "repetition": 1},
+            tokenize("pruning tomatoes", bigrams=False),
+            {"prun": 1, "tomato": 1},
         )
 
     def test_non_latin_text_is_tokenised(self):

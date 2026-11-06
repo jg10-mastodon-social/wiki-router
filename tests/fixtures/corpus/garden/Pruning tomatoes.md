@@ -1,3 +1,4 @@
-# Spaced Repetition
+# Pruning Tomatoes
 
-Review notes at https://pod.example.com/pod/notes/garden/review.md daily.
+Pinch out side shoots weekly and water at the base.
+See https://example.com/watering/ for the schedule.
