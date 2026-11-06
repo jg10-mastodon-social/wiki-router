@@ -3,8 +3,9 @@ import json
 import sys
 from collections.abc import Sequence
 from dataclasses import replace
+from pathlib import Path
 
-from . import CONTRACT, __version__, router, store
+from . import CONTRACT, __version__, evaluate, router, store
 from .config import ConfigError, load_config
 from .fetch import FetchResult, fetch
 
@@ -57,6 +58,15 @@ def build_parser() -> argparse.ArgumentParser:
         "--json", action="store_true", dest="as_json", help="print JSON"
     )
 
+    evaluate_parser = subparsers.add_parser(
+        "eval", help="replay known routing decisions from a fixture"
+    )
+    evaluate_parser.add_argument("--fixture", type=Path, default=None)
+    evaluate_parser.add_argument("--top", type=int, default=5)
+    evaluate_parser.add_argument(
+        "--json", action="store_true", dest="as_json", help="print JSON"
+    )
+
     return parser
 
 
@@ -71,6 +81,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _run_build(args.check, args.as_json)
     if args.command == "route":
         return _run_route(args)
+    if args.command == "eval":
+        return _run_eval(args.fixture, args.top, args.as_json)
 
     raise AssertionError(f"unhandled command: {args.command}")
 
@@ -141,6 +153,57 @@ def _build_report(payload: store.IndexPayload, stale: bool) -> dict:
         "notes": payload.notes,
         "stale": stale,
     }
+
+
+def _run_eval(fixture: Path | None, top: int, as_json: bool) -> int:
+    try:
+        config = load_config()
+    except ConfigError as error:
+        print(f"wiki-router: {error}", file=sys.stderr)
+        return 2
+
+    path = Path(fixture) if fixture is not None else evaluate.DEFAULT_FIXTURE
+    if not path.is_file():
+        print(f"eval fixture not found: {path}", file=sys.stderr)
+        return 1
+
+    try:
+        index = store.load(config.state)
+    except FileNotFoundError:
+        print("routing index missing: run build", file=sys.stderr)
+        return 1
+
+    try:
+        cases = evaluate.load_cases(path)
+    except ValueError as error:
+        print(f"wiki-router: {error}", file=sys.stderr)
+        return 1
+
+    payload = evaluate.evaluate(index.documents, cases, top=top)
+    payload["fixture"] = str(path)
+
+    if as_json:
+        print(json.dumps(payload))
+    else:
+        _print_eval(payload)
+
+    return 0 if payload["hit_at_top"] == payload["total"] else 1
+
+
+def _print_eval(payload: dict) -> None:
+    print(f"fixture: {payload['fixture']}")
+    for result in payload["cases"]:
+        rank = result["rank"]
+        marker = f"ok   #{rank}   " if rank else "MISS —    "
+        print(f"{marker}{result['url']}")
+        print(f"     want {', '.join(result['expected'])}")
+        if not rank:
+            print(f"     got  {', '.join(result['top']) or '-'}")
+    print()
+    print(
+        f"hit@1 {payload['hit_at_1']}/{payload['total']}"
+        f" · hit@{payload['top']} {payload['hit_at_top']}/{payload['total']}"
+    )
 
 
 def _run_route(args: argparse.Namespace) -> int:

@@ -450,6 +450,116 @@ class RouteCommandTests(unittest.TestCase):
         self.assertIn("WIKI_ROUTER_NOTES", err.getvalue())
 
 
+class EvalCommandTests(unittest.TestCase):
+    def _run(self, args, notes, state):
+        environ = {
+            "WIKI_ROUTER_NOTES": str(notes),
+            "WIKI_ROUTER_HOME": str(state),
+        }
+        out = io.StringIO()
+        err = io.StringIO()
+        with mock.patch.dict(os.environ, environ, clear=True):
+            with redirect_stdout(out), redirect_stderr(err):
+                code = main(args)
+        return code, out.getvalue(), err.getvalue()
+
+    def test_eval_json_on_the_committed_fixture(self):
+        with tempfile.TemporaryDirectory() as state:
+            self._run(["build"], FIXTURES, state)
+            code, out, err = self._run(["eval", "--json"], FIXTURES, state)
+
+        payload = json.loads(out)
+        self.assertEqual(code, 0)
+        self.assertEqual(err, "")
+        self.assertEqual(payload["total"], 5)
+        self.assertEqual(payload["hit_at_1"], 5)
+        self.assertEqual(payload["hit_at_top"], 5)
+        self.assertEqual(
+            Path(payload["fixture"]).resolve(),
+            (FIXTURES.parent / "eval.json").resolve(),
+        )
+
+    def test_eval_returns_one_when_a_case_misses(self):
+        with tempfile.TemporaryDirectory() as state:
+            self._run(["build"], FIXTURES, state)
+            with tempfile.TemporaryDirectory() as tmp:
+                fixture = Path(tmp) / "eval.json"
+                fixture.write_text(
+                    json.dumps(
+                        {
+                            "cases": [
+                                {
+                                    "url": "https://example.com/watering/",
+                                    "title": "Watering",
+                                    "acceptable": ["garden/nowhere.md"],
+                                }
+                            ]
+                        }
+                    ),
+                    encoding="utf-8",
+                )
+                code, out, err = self._run(
+                    ["eval", "--fixture", str(fixture), "--json"],
+                    FIXTURES,
+                    state,
+                )
+
+        payload = json.loads(out)
+        self.assertEqual(code, 1)
+        self.assertEqual(err, "")
+        self.assertEqual(payload["hit_at_top"], 0)
+        self.assertEqual(payload["cases"][0]["rank"], 0)
+
+    def test_eval_with_a_missing_fixture_names_the_path(self):
+        with tempfile.TemporaryDirectory() as state:
+            self._run(["build"], FIXTURES, state)
+            with tempfile.TemporaryDirectory() as tmp:
+                missing = Path(tmp) / "absent.json"
+                code, out, err = self._run(
+                    ["eval", "--fixture", str(missing)], FIXTURES, state
+                )
+
+        self.assertEqual(code, 1)
+        self.assertEqual(out, "")
+        self.assertEqual(err, f"eval fixture not found: {missing}\n")
+
+    def test_eval_text_prints_the_fixture_path_and_summary(self):
+        with tempfile.TemporaryDirectory() as state:
+            self._run(["build"], FIXTURES, state)
+            code, out, err = self._run(["eval"], FIXTURES, state)
+
+        lines = out.splitlines()
+        self.assertEqual(code, 0)
+        self.assertEqual(err, "")
+        self.assertEqual(out.count("fixture:"), 1)
+        self.assertTrue(lines[0].startswith("fixture: "))
+        self.assertEqual(
+            Path(lines[0].split("fixture: ", 1)[1]).resolve(),
+            (FIXTURES.parent / "eval.json").resolve(),
+        )
+        self.assertIn("ok   #1   https://example.com/watering/", out)
+        self.assertEqual(lines[-1], "hit@1 5/5 · hit@5 5/5")
+
+    def test_eval_without_an_index_reports_one(self):
+        with tempfile.TemporaryDirectory() as state:
+            code, out, err = self._run(["eval"], FIXTURES, state)
+
+        self.assertEqual(code, 1)
+        self.assertEqual(out, "")
+        self.assertEqual(err, "routing index missing: run build\n")
+
+    def test_eval_without_environment_reports_two(self):
+        out = io.StringIO()
+        err = io.StringIO()
+        with mock.patch.dict(os.environ, {}, clear=True):
+            with redirect_stdout(out), redirect_stderr(err):
+                code = main(["eval", "--json"])
+
+        self.assertEqual(code, 2)
+        self.assertEqual(out.getvalue(), "")
+        self.assertIn("WIKI_ROUTER_NOTES", err.getvalue())
+
+
 class UsageTests(unittest.TestCase):
     def test_unknown_subcommand_exits_two(self):
         with redirect_stderr(io.StringIO()):

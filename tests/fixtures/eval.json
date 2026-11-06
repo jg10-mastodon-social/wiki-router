@@ -1,0 +1,35 @@
+{
+  "_comment": "Example replay fixture over tests/fixtures/corpus. Cases deliberately vary: exact label, another wiki, a nested id, a partial label match, and matching on body text alone. All hit at rank 1.",
+  "cases": [
+    {
+      "url": "https://example.com/watering/",
+      "title": "Watering",
+      "acceptable": ["garden/watering.md"],
+      "note": "exact label match"
+    },
+    {
+      "url": "https://example.com/commute/",
+      "title": "Commute",
+      "acceptable": ["cycling/commute.md"],
+      "note": "exact label in a second wiki"
+    },
+    {
+      "url": "https://example.com/soil/",
+      "title": "Soil",
+      "acceptable": ["garden/topics/soil.md"],
+      "note": "nested page id"
+    },
+    {
+      "url": "https://example.com/tomato-pruning/",
+      "title": "Pruning tomatoes in late summer",
+      "acceptable": ["garden/Pruning tomatoes.md"],
+      "note": "partial label match, not exact"
+    },
+    {
+      "url": "https://example.com/quiet-riverside-route/",
+      "title": "A quiet riverside route",
+      "acceptable": ["cycling/commute.md"],
+      "note": "matches on body text with no label or heading help"
+    }
+  ]
+}
