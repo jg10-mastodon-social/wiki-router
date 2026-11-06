@@ -4,9 +4,12 @@ import os
 import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
+from pathlib import Path
 from unittest import mock
 
 from wikirc.cli import build_parser, main
+
+FIXTURES = Path(__file__).parent / "fixtures" / "corpus"
 
 
 class ParserTests(unittest.TestCase):
@@ -97,6 +100,81 @@ class ConfigCommandTests(unittest.TestCase):
         with mock.patch.dict(os.environ, {}, clear=True):
             with redirect_stdout(out), redirect_stderr(err):
                 code = main(["config", "--json"])
+        self.assertEqual(code, 2)
+        self.assertEqual(out.getvalue(), "")
+        self.assertIn("WIKI_ROUTER_NOTES", err.getvalue())
+
+
+class BuildCommandTests(unittest.TestCase):
+    def _run(self, args, notes, state):
+        environ = {
+            "WIKI_ROUTER_NOTES": str(notes),
+            "WIKI_ROUTER_HOME": str(state),
+        }
+        out = io.StringIO()
+        err = io.StringIO()
+        with mock.patch.dict(os.environ, environ, clear=True):
+            with redirect_stdout(out), redirect_stderr(err):
+                code = main(args)
+        return code, out.getvalue(), err.getvalue()
+
+    def test_check_before_any_build_is_stale(self):
+        with tempfile.TemporaryDirectory() as state:
+            code, out, err = self._run(["build", "--check"], FIXTURES, state)
+
+        self.assertEqual(code, 1)
+        self.assertEqual(out, "index is stale\n")
+        self.assertEqual(err, "")
+
+    def test_build_then_check_is_up_to_date(self):
+        with tempfile.TemporaryDirectory() as state:
+            code, out, err = self._run(["build"], FIXTURES, state)
+            self.assertEqual(code, 0)
+            self.assertEqual(err, "")
+            self.assertEqual(
+                out,
+                f"indexed 7 pages -> {Path(state) / 'index.json'}\n",
+            )
+            self.assertTrue((Path(state) / "index.json").is_file())
+
+            code, out, err = self._run(["build", "--check"], FIXTURES, state)
+
+        self.assertEqual(code, 0)
+        self.assertEqual(out, "index is up to date\n")
+        self.assertEqual(err, "")
+
+    def test_build_json_reports_pages_and_fingerprint(self):
+        with tempfile.TemporaryDirectory() as state:
+            code, out, err = self._run(["build", "--json"], FIXTURES, state)
+
+            payload = json.loads(out)
+
+            self.assertEqual(code, 0)
+            self.assertEqual(err, "")
+            self.assertEqual(payload["pages"], 7)
+            self.assertEqual(len(payload["fingerprint"]), 64)
+            self.assertEqual(payload["notes"], str(FIXTURES))
+            self.assertFalse(payload["stale"])
+
+            code, out, err = self._run(
+                ["build", "--check", "--json"], FIXTURES, state
+            )
+
+        checked = json.loads(out)
+        self.assertEqual(code, 0)
+        self.assertFalse(checked["stale"])
+        self.assertEqual(
+            sorted(checked),
+            ["fingerprint", "generated", "notes", "pages", "stale"],
+        )
+
+    def test_build_without_environment_reports_two(self):
+        out = io.StringIO()
+        err = io.StringIO()
+        with mock.patch.dict(os.environ, {}, clear=True):
+            with redirect_stdout(out), redirect_stderr(err):
+                code = main(["build"])
+
         self.assertEqual(code, 2)
         self.assertEqual(out.getvalue(), "")
         self.assertIn("WIKI_ROUTER_NOTES", err.getvalue())

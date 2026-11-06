@@ -232,6 +232,20 @@ class PageContentTests(unittest.TestCase):
         self.assertEqual(page.text, body[:20000])
 
 
+class PageWikiTests(unittest.TestCase):
+    def test_pages_carry_their_wiki_directory_name(self):
+        wikis = discover_wikis(FIXTURES)
+
+        for wiki in wikis:
+            for page in wiki.pages:
+                self.assertEqual(page.wiki, wiki.name)
+
+    def test_nested_page_carries_its_wiki_directory_name(self):
+        page = _page(_garden(), "topics/soil.md")
+
+        self.assertEqual(page.wiki, "garden")
+
+
 class SizeCapTests(unittest.TestCase):
     def test_file_over_the_size_cap_is_skipped(self):
         with tempfile.TemporaryDirectory() as tmp:

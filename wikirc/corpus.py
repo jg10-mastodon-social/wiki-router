@@ -17,6 +17,7 @@ _BARE_URL = re.compile(r"https?://[^\s<>()\[\]]+")
 @dataclass(frozen=True)
 class Page:
     id: str
+    wiki: str
     label: str
     subject: str | None
     local: Path
@@ -79,6 +80,7 @@ def _build_page(
 
     return Page(
         id=page_id,
+        wiki=path.name,
         label=_pick_label(entry.labels),
         subject=subject,
         local=local,

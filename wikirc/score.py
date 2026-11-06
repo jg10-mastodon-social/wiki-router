@@ -18,6 +18,7 @@ class Document:
     headings: tuple[str, ...]
     links: tuple[str, ...]
     text: str
+    summary: str = ""
 
 
 @dataclass(frozen=True)
