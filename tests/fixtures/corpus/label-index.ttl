@@ -1,0 +1,4 @@
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+
+<Pruning%20Tomatoes.md> rdfs:label "Pruning Tomatoes" .
+<https://pod.example.com/pod/notes/garden/tomatoes.md> rdfs:label "Card" .
