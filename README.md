@@ -1,5 +1,7 @@
 # wiki-router
 
+![No maintenance intended](https://img.shields.io/badge/no_maintenance_intended-orange) ![Code quality: TDD vibe coded](https://img.shields.io/badge/code_quality-TDD_vibe_coded-orange)
+
 Ranks wiki pages for a URL from a precomputed local index and adds the link to
 the chosen page as one markdown bullet.
 
