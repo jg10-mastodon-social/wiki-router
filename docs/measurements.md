@@ -47,6 +47,29 @@ live URLs exposed failures:
 This is the measured case for adding metadata resolution before any further
 ranking work.
 
+## 2026-11-07 — filed versus unfiled corpora
+
+Every earlier comparison replayed the fixture against the corpus as filed, where
+the expected page already contains the case URL. Sixteen of seventeen expected
+pages were in that state. That measures re-filing, not routing.
+
+`tools/unfiled_corpus.py` removes every line containing a fixture URL, so the
+corpus is in the state the router actually faces: a link nobody has seen.
+
+| Corpus | Pages | This router hit@1 / hit@5 | Previous hit@1 / hit@5 |
+|---|---|---|---|
+| as filed | 5,495 | 12/17 · 17/17 | 17/17 · 17/17 |
+| unfiled | 5,495 | **7/17 · 11/17** | **4/17 · 6/17** |
+
+The previous implementation's perfect score was largely the already-linked boost
+plus the answer page carrying the link's own words. With the link removed the
+rebuild is ahead on both measures.
+
+Remaining misses are concentrated where a short concept note from the dominant
+collection is a defensible answer alongside the page the fixture names: a query
+about a topic covered in both places ranks the concept note first. Those cases
+say as much about single-page `acceptable` sets as about ranking.
+
 ## 2026-11-07 — both resolved
 
 Re-measured after metadata resolution landed, same inputs:
