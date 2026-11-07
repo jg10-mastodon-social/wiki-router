@@ -15,6 +15,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+from .synonyms import expand
 from .score import Candidate, Document, Query, rank
 
 DEFAULT_FIXTURE = (
@@ -62,6 +63,7 @@ def evaluate(
     cases: Sequence[Case],
     top: int = 5,
     redirects: Mapping[str, str] = {},
+    synonyms: Mapping[str, str] = {},
 ) -> dict:
     results = []
     hit_at_1 = 0
@@ -74,9 +76,9 @@ def evaluate(
             documents,
             Query(
                 url=case.url,
-                title=case.title,
-                description=case.description,
-                context=case.context,
+                title=expand(case.title, dict(synonyms)),
+                description=expand(case.description, dict(synonyms)),
+                context=expand(case.context, dict(synonyms)),
             ),
             top=top,
         )

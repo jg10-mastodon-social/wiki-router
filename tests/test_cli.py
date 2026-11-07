@@ -962,3 +962,51 @@ class CapabilityCliTests(unittest.TestCase):
 
         self.assertEqual(code, 0)
         self.assertNotIn("are not met", out)
+
+
+class SynonymsCliTests(unittest.TestCase):
+    def _run(self, args, notes, state):
+        environ = {
+            "WIKI_ROUTER_NOTES": str(notes),
+            "WIKI_ROUTER_HOME": str(state),
+        }
+        out = io.StringIO()
+        err = io.StringIO()
+        with mock.patch.dict(os.environ, environ, clear=True):
+            with redirect_stdout(out), redirect_stderr(err):
+                code = main(args)
+        return code, out.getvalue(), err.getvalue()
+
+    def test_a_synonym_lets_an_unrelated_word_reach_a_page(self):
+        with tempfile.TemporaryDirectory() as state, tempfile.TemporaryDirectory() as tmp:
+            self._run(["build"], FIXTURES, state)
+            path = Path(tmp) / "synonyms.json"
+            path.write_text('{"irrigation": "watering"}', encoding="utf-8")
+
+            without, plain, _ = self._run(
+                ["route", "https://example.com/irrigation/", "--no-fetch", "--json"], FIXTURES, state
+            )
+            with_syn, out, _ = self._run(
+                ["route", "https://example.com/irrigation/", "--no-fetch", "--json",
+                 "--synonyms", str(path)], FIXTURES, state
+            )
+
+        self.assertEqual(without, 0)
+        self.assertNotIn(
+            "watering.md",
+            [candidate["id"] for candidate in json.loads(plain)["candidates"]],
+        )
+        self.assertEqual(with_syn, 0)
+        self.assertEqual(json.loads(out)["candidates"][0]["id"], "watering.md")
+
+    def test_a_malformed_synonym_file_exits_two(self):
+        with tempfile.TemporaryDirectory() as state, tempfile.TemporaryDirectory() as tmp:
+            self._run(["build"], FIXTURES, state)
+            path = Path(tmp) / "synonyms.json"
+            path.write_text('{"a": 3}', encoding="utf-8")
+            code, _, err = self._run(
+                ["route", "https://example.com/watering/", "--no-fetch",
+                 "--synonyms", str(path)], FIXTURES, state
+            )
+        self.assertEqual(code, 2)
+        self.assertIn("synonyms must map phrases to phrases", err)

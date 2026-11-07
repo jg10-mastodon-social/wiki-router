@@ -130,6 +130,23 @@ the router cannot do yet rather than a list of runners-up. A failure with no
 statement is counted separately as unclassified, and any failure still exits
 non-zero: the statement explains a failure, it does not excuse it.
 
+### Synonyms
+
+Scoring is lexical, so a link that names a subject differently from the page that
+covers it never matches. A synonym map states the vocabulary of a corpus:
+
+```json
+// $WIKI_ROUTER_HOME/synonyms.json
+{ "foresight": "futures", "causal layered analysis": "futures" }
+```
+
+Phrases are allowed and the longest match wins, so `causal layered analysis` is
+not also expanded as `causal layered`. Expansion applies to the query — title,
+description and context — and leaves the original words in place, so a phrase
+stays evidence in its own right. It does not touch the index, which means
+changing the map never invalidates a build. `--synonyms PATH` overrides the
+default location.
+
 ### Redirected pages
 
 When content moves between pages, the old page keeps enough of the original

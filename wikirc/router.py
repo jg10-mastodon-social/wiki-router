@@ -5,6 +5,7 @@ from urllib.parse import unquote, urlsplit
 
 from . import CONTRACT
 from .fetch import FetchResult
+from .synonyms import expand
 from .score import Candidate, Document, Query, rank
 from .text import tokenize
 
@@ -38,6 +39,7 @@ def route_payload(
     wiki: str = "",
     exclude_wiki: str = "",
     redirects: Mapping[str, str] = {},
+    synonyms: Mapping[str, str] = {},
 ) -> dict:
     selected = [
         document
@@ -50,9 +52,9 @@ def route_payload(
         selected,
         Query(
             url=url,
-            title=block["title"],
-            description=block["description"],
-            context=context,
+            title=expand(block["title"], dict(synonyms)),
+            description=expand(block["description"], dict(synonyms)),
+            context=expand(context, dict(synonyms)),
         ),
         top=len(selected),
     )
