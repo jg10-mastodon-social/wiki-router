@@ -8,6 +8,7 @@ from dataclasses import dataclass, replace
 from html.parser import HTMLParser
 from urllib.parse import unquote, urljoin, urlsplit
 
+from .books import archive_identifier, resolve_archive
 from .metadata import doi_from_url, resolve_doi
 
 FETCH_TIMEOUT = 15
@@ -200,6 +201,11 @@ def fetch(
         if not result.ok and not result.title:
             return replace(result, title=_doi_slug_title(doi))
         return result
+
+    identifier = archive_identifier(url)
+    if identifier is not None:
+        reader = json_get if json_getter is None else json_getter
+        return resolve_archive(identifier, timeout=timeout, json_getter=reader)
 
     try:
         final_url, content_type, body = getter(url, timeout, MAX_FETCH_BYTES)

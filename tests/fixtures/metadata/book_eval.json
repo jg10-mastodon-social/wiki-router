@@ -1,0 +1,138 @@
+{
+  "_comment": "Expected outcomes for archive.org book resolution; payloads are synthetic. Each response maps an API URL to a file under tests/fixtures/metadata/. A URL absent from the map raises, so no case can silently reach the network.",
+  "cases": [
+    {
+      "note": "archive record without an ISBN: chrome stripped, archive data passed through",
+      "url": "https://archive.org/details/syntheticbook01",
+      "responses": {
+        "https://archive.org/metadata/syntheticbook01": "book/archive-no-isbn.json"
+      },
+      "expects": {
+        "ok": true,
+        "final_url": "https://archive.org/details/syntheticbook01",
+        "title": "Tidewater Almanac",
+        "description": "",
+        "source": "archive.org",
+        "creator": "Mira Vell",
+        "date": "1974",
+        "isbn": "",
+        "canonical": "",
+        "title_noisy": false,
+        "error": ""
+      }
+    },
+    {
+      "note": "valid ISBN with an Open Library record: Open Library wins",
+      "url": "https://archive.org/details/syntheticbook02",
+      "responses": {
+        "https://archive.org/metadata/syntheticbook02": "book/archive-with-isbn.json",
+        "https://openlibrary.org/api/books?bibkeys=ISBN:9798999000019&format=json&jscmd=data": "book/openlibrary-record.json"
+      },
+      "expects": {
+        "ok": true,
+        "final_url": "https://archive.org/details/syntheticbook02",
+        "title": "The Lantern Makers: a study of coastal workshops",
+        "source": "openlibrary",
+        "creator": "Oren Pell; Inez Sable",
+        "date": "2011",
+        "isbn": "9798999000019",
+        "canonical": "https://openlibrary.org/isbn/9798999000019",
+        "error": ""
+      }
+    },
+    {
+      "note": "valid ISBN Open Library does not know: archive data falls back in",
+      "url": "https://archive.org/details/syntheticbook03",
+      "responses": {
+        "https://archive.org/metadata/syntheticbook03": "book/archive-unknown-isbn.json",
+        "https://openlibrary.org/api/books?bibkeys=ISBN:9798999000026&format=json&jscmd=data": "book/openlibrary-missing.json"
+      },
+      "expects": {
+        "ok": true,
+        "title": "Salt Marsh Ledger",
+        "source": "archive.org",
+        "creator": "Toma Rill",
+        "date": "1988",
+        "isbn": "9798999000026",
+        "canonical": "",
+        "error": ""
+      }
+    },
+    {
+      "note": "chrome suffix repeated twice is stripped repeatedly",
+      "url": "https://archive.org/details/syntheticbook04",
+      "responses": {
+        "https://archive.org/metadata/syntheticbook04": "book/archive-doubled-chrome.json"
+      },
+      "expects": {
+        "ok": true,
+        "title": "Pale Dune Survey",
+        "source": "archive.org",
+        "creator": "Rae Quill",
+        "date": "1962",
+        "canonical": ""
+      }
+    },
+    {
+      "note": "trailing author and date tail is removed",
+      "url": "https://archive.org/details/syntheticbook05",
+      "responses": {
+        "https://archive.org/metadata/syntheticbook05": "book/archive-author-tail.json"
+      },
+      "expects": {
+        "ok": true,
+        "title": "Harbor Light Notes",
+        "source": "archive.org",
+        "creator": "Ada Thorne",
+        "date": "1954"
+      }
+    },
+    {
+      "note": "archive record missing entirely",
+      "url": "https://archive.org/details/absentinventory",
+      "responses": {},
+      "expects": {
+        "ok": false,
+        "final_url": "https://archive.org/details/absentinventory",
+        "title": "",
+        "source": "",
+        "creator": "",
+        "date": "",
+        "isbn": "",
+        "canonical": "",
+        "error": "no archive record"
+      }
+    },
+    {
+      "note": "invalid ISBN checksum is not sent to Open Library",
+      "url": "https://archive.org/details/syntheticbook07",
+      "responses": {
+        "https://archive.org/metadata/syntheticbook07": "book/archive-invalid-isbn.json",
+        "https://openlibrary.org/api/books?bibkeys=ISBN:9798999000065&format=json&jscmd=data": "book/openlibrary-poison.json"
+      },
+      "expects": {
+        "ok": true,
+        "title": "Quarry Songs",
+        "source": "archive.org",
+        "creator": "Pim Ost",
+        "date": "2001",
+        "isbn": "",
+        "canonical": ""
+      }
+    },
+    {
+      "note": "archive details URL never reaches the HTML getter",
+      "url": "https://archive.org/details/syntheticbook08",
+      "responses": {
+        "https://archive.org/metadata/syntheticbook08": "book/archive-guarded.json"
+      },
+      "expects": {
+        "ok": true,
+        "title": "Signal Fires of the Fens",
+        "source": "archive.org",
+        "creator": "Lena Marr",
+        "date": "1990"
+      }
+    }
+  ]
+}
