@@ -1,0 +1,21 @@
+{
+  "status": "ok",
+  "message-type": "work",
+  "message": {
+    "DOI": "10.1234/example-1",
+    "title": ["Tidal patterns in invented estuaries"],
+    "author": [
+      {
+        "given": "Mira",
+        "family": "Vell"
+      }
+    ],
+    "container-title": ["Journal of Synthetic Findings"],
+    "published-print": {
+      "date-parts": [[2023, 5, 1]]
+    },
+    "issued": {
+      "date-parts": [[2021]]
+    }
+  }
+}

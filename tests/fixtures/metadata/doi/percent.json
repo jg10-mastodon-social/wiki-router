@@ -1,0 +1,17 @@
+{
+  "status": "ok",
+  "message-type": "work",
+  "message": {
+    "DOI": "10.1234/example-6",
+    "title": ["Percent-encoded routes to the same record"],
+    "author": [
+      {
+        "given": "Pim",
+        "family": "Ost"
+      }
+    ],
+    "issued": {
+      "date-parts": [[2018]]
+    }
+  }
+}

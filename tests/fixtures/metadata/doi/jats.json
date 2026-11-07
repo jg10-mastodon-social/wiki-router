@@ -1,0 +1,22 @@
+{
+  "status": "ok",
+  "message-type": "work",
+  "message": {
+    "DOI": "10.1234/example-3",
+    "title": [
+      "<jats:italic>Quercus</jats:italic>  under\n  <sub>2</sub> lamps &amp; shaded trays"
+    ],
+    "author": [
+      {
+        "given": "Toma",
+        "family": "Rill"
+      }
+    ],
+    "published-online": {
+      "date-parts": [[2024, 2]]
+    },
+    "issued": {
+      "date-parts": [[2023]]
+    }
+  }
+}

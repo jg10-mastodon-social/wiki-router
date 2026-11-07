@@ -1,0 +1,17 @@
+{
+  "status": "ok",
+  "message-type": "work",
+  "message": {
+    "DOI": "10.1234/example-8",
+    "title": ["A record that never needs the publisher page"],
+    "author": [
+      {
+        "given": "Rae",
+        "family": "Quill"
+      }
+    ],
+    "issued": {
+      "date-parts": [[2017]]
+    }
+  }
+}

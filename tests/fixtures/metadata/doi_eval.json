@@ -1,0 +1,141 @@
+{
+  "_comment": "Expected outcomes for DOI resolution; payloads are synthetic. Each response maps an API URL to a file under tests/fixtures/metadata/. A URL absent from the map raises, so no case can silently reach the network.",
+  "cases": [
+    {
+      "note": "plain title, single author, published-print year",
+      "url": "https://doi.org/10.1234/example-1",
+      "responses": {
+        "https://api.crossref.org/works/10.1234/example-1": "doi/simple.json"
+      },
+      "expects": {
+        "ok": true,
+        "source": "crossref",
+        "title": "Tidal patterns in invented estuaries",
+        "creator": "Mira Vell",
+        "date": "2023",
+        "description": "Journal of Synthetic Findings",
+        "final_url": "https://doi.org/10.1234/example-1",
+        "canonical": "https://doi.org/10.1234/example-1",
+        "error": ""
+      }
+    },
+    {
+      "note": "title and subtitle composed with a colon",
+      "url": "https://doi.org/10.1234/example-2",
+      "responses": {
+        "https://api.crossref.org/works/10.1234/example-2": "doi/subtitle.json"
+      },
+      "expects": {
+        "ok": true,
+        "source": "crossref",
+        "title": "Lichen surveys of the upper shelf: a method note",
+        "creator": "Oren Pell",
+        "date": "2022",
+        "canonical": "https://doi.org/10.1234/example-2"
+      }
+    },
+    {
+      "note": "JATS markup stripped and whitespace collapsed",
+      "url": "https://doi.org/10.1234/example-3",
+      "responses": {
+        "https://api.crossref.org/works/10.1234/example-3": "doi/jats.json"
+      },
+      "expects": {
+        "ok": true,
+        "source": "crossref",
+        "title": "Quercus under 2 lamps & shaded trays",
+        "creator": "Toma Rill",
+        "date": "2024",
+        "canonical": "https://doi.org/10.1234/example-3"
+      }
+    },
+    {
+      "note": "subtitle already contained in the title is not duplicated",
+      "url": "https://doi.org/10.1234/example-4",
+      "responses": {
+        "https://api.crossref.org/works/10.1234/example-4": "doi/subtitle-in-title.json"
+      },
+      "expects": {
+        "ok": true,
+        "source": "crossref",
+        "title": "Coastal fog in spring",
+        "creator": "Inez Sable",
+        "date": "2020",
+        "canonical": "https://doi.org/10.1234/example-4"
+      }
+    },
+    {
+      "note": "dx.doi.org URL resolves through the same record",
+      "url": "https://dx.doi.org/10.1234/example-5",
+      "responses": {
+        "https://api.crossref.org/works/10.1234/example-5": "doi/dx.json"
+      },
+      "expects": {
+        "ok": true,
+        "source": "crossref",
+        "title": "A legacy-host record for dune grasses",
+        "creator": "The Dune Survey Collective",
+        "date": "2019",
+        "canonical": "https://doi.org/10.1234/example-5"
+      }
+    },
+    {
+      "note": "percent-encoded DOI is decoded before lookup",
+      "url": "https://doi.org/10.1234%2Fexample-6",
+      "responses": {
+        "https://api.crossref.org/works/10.1234/example-6": "doi/percent.json"
+      },
+      "expects": {
+        "ok": true,
+        "source": "crossref",
+        "title": "Percent-encoded routes to the same record",
+        "creator": "Pim Ost",
+        "date": "2018",
+        "canonical": "https://doi.org/10.1234/example-6"
+      }
+    },
+    {
+      "note": "Crossref has no record: failure carries the slug-ish title",
+      "url": "https://doi.org/10.1234/absent-record",
+      "responses": {},
+      "expects": {
+        "ok": false,
+        "source": "",
+        "title": "absent record",
+        "creator": "",
+        "date": "",
+        "canonical": "",
+        "error": "no crossref record"
+      }
+    },
+    {
+      "note": "a Crossref payload that cannot be parsed is a crossref error",
+      "url": "https://doi.org/10.1234/example-7",
+      "responses": {
+        "https://api.crossref.org/works/10.1234/example-7": "doi/broken.json"
+      },
+      "expects": {
+        "ok": false,
+        "source": "",
+        "title": "example 7",
+        "canonical": "",
+        "error": "crossref error"
+      }
+    },
+    {
+      "note": "a DOI never reaches the HTML publisher page",
+      "url": "https://doi.org/10.1234/example-8",
+      "responses": {
+        "https://api.crossref.org/works/10.1234/example-8": "doi/guarded.json"
+      },
+      "expects": {
+        "ok": true,
+        "source": "crossref",
+        "title": "A record that never needs the publisher page",
+        "creator": "Rae Quill",
+        "date": "2017",
+        "canonical": "https://doi.org/10.1234/example-8"
+      }
+    }
+  ]
+}

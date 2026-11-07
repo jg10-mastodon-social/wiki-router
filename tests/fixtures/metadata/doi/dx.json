@@ -1,0 +1,16 @@
+{
+  "status": "ok",
+  "message-type": "work",
+  "message": {
+    "DOI": "10.1234/example-5",
+    "title": ["A legacy-host record for dune grasses"],
+    "author": [
+      {
+        "name": "The Dune Survey Collective"
+      }
+    ],
+    "issued": {
+      "date-parts": [[2019]]
+    }
+  }
+}

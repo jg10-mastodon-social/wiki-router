@@ -1,0 +1,18 @@
+{
+  "status": "ok",
+  "message-type": "work",
+  "message": {
+    "DOI": "10.1234/example-2",
+    "title": ["Lichen surveys of the upper shelf"],
+    "subtitle": ["a method note"],
+    "author": [
+      {
+        "given": "Oren",
+        "family": "Pell"
+      }
+    ],
+    "issued": {
+      "date-parts": [[2022]]
+    }
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "status": "ok",
+  "message-type": "work",
+  "message": {
+    "DOI": "10.1234/example-4",
+    "title": ["Coastal fog in spring"],
+    "subtitle": ["in spring"],
+    "author": [
+      {
+        "given": "Inez",
+        "family": "Sable"
+      }
+    ],
+    "issued": {
+      "date-parts": [[2020]]
+    }
+  }
+}

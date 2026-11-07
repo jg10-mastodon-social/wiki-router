@@ -1,11 +1,14 @@
 """Fetch a URL and extract its metadata."""
 
 import html as html_module
+import json
 import urllib.error
 import urllib.request
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from html.parser import HTMLParser
-from urllib.parse import urljoin, urlsplit
+from urllib.parse import unquote, urljoin, urlsplit
+
+from .metadata import doi_from_url, resolve_doi
 
 FETCH_TIMEOUT = 15
 MAX_FETCH_BYTES = 600_000
@@ -119,6 +122,20 @@ def http_get(url: str, timeout: int, limit: int) -> tuple[str, str, bytes]:
     return final_url, content_type, body
 
 
+def json_get(url: str, timeout: int, limit: int):
+    request = urllib.request.Request(
+        url,
+        headers={
+            "User-Agent": USER_AGENT,
+            "Accept": "application/json",
+            "Accept-Encoding": "identity",
+        },
+    )
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        body = response.read(limit)
+    return json.loads(body.decode("utf-8"))
+
+
 def extract(html: str, base_url: str) -> dict:
     parser = _MetaParser()
     parser.feed(html)
@@ -170,8 +187,20 @@ def title_is_noisy(title: str, url: str) -> bool:
 
 
 def fetch(
-    url: str, *, timeout: int = FETCH_TIMEOUT, getter=http_get
+    url: str,
+    *,
+    timeout: int = FETCH_TIMEOUT,
+    getter=http_get,
+    json_getter=None,
 ) -> FetchResult:
+    doi = doi_from_url(url)
+    if doi is not None:
+        reader = json_get if json_getter is None else json_getter
+        result = resolve_doi(doi, timeout=timeout, json_getter=reader)
+        if not result.ok and not result.title:
+            return replace(result, title=_doi_slug_title(doi))
+        return result
+
     try:
         final_url, content_type, body = getter(url, timeout, MAX_FETCH_BYTES)
     except TimeoutError:
@@ -210,3 +239,11 @@ def _words(text: str) -> list[str]:
         char if char.isalnum() else " " for char in text.lower()
     )
     return cleaned.split()
+
+
+def _doi_slug_title(doi: str) -> str:
+    suffix = doi.rsplit("/", 1)[-1]
+    cleaned = "".join(
+        char if char.isalnum() else " " for char in unquote(suffix)
+    )
+    return " ".join(cleaned.split())

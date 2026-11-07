@@ -11,6 +11,7 @@ from wikirc.fetch import (
     extract,
     fetch,
     http_get,
+    json_get,
     title_is_noisy,
 )
 
@@ -312,6 +313,67 @@ class FetchSuccessTests(unittest.TestCase):
             [("https://example.com/", FETCH_TIMEOUT, MAX_FETCH_BYTES)],
         )
         self.assertEqual(FETCH_TIMEOUT, 15)
+
+
+class JsonGetTests(unittest.TestCase):
+    def test_reads_json_at_most_the_limit_with_the_json_accept_header(self):
+        response = FakeResponse(body=b'{"a": 1}')
+
+        with mock.patch(
+            "urllib.request.urlopen", return_value=response
+        ) as urlopen:
+            payload = json_get("https://api.example.com/works/1", 15, 10)
+
+        self.assertEqual(payload, {"a": 1})
+        self.assertEqual(response.read_sizes, [10])
+        request, kwargs = urlopen.call_args[0][0], urlopen.call_args[1]
+        self.assertEqual(request.headers["User-agent"], USER_AGENT)
+        self.assertEqual(request.headers["Accept"], "application/json")
+        self.assertEqual(request.headers["Accept-encoding"], "identity")
+        self.assertEqual(kwargs["timeout"], 15)
+
+
+class DoiFetchTests(unittest.TestCase):
+    def test_a_doi_resolves_through_crossref_without_the_html_getter(self):
+        html_getter = fake_getter()
+        calls = []
+        payload = {
+            "message": {
+                "title": ["An invented record"],
+                "author": [{"given": "Ada", "family": "Nym"}],
+                "issued": {"date-parts": [[2016]]},
+            }
+        }
+
+        def json_getter(url, timeout, limit):
+            calls.append((url, timeout, limit))
+            return payload
+
+        result = fetch(
+            "https://doi.org/10.1234/example-1",
+            getter=html_getter,
+            json_getter=json_getter,
+        )
+
+        self.assertTrue(result.ok)
+        self.assertEqual(result.source, "crossref")
+        self.assertEqual(result.title, "An invented record")
+        self.assertEqual(result.creator, "Ada Nym")
+        self.assertEqual(result.date, "2016")
+        self.assertEqual(
+            result.canonical, "https://doi.org/10.1234/example-1"
+        )
+        self.assertEqual(html_getter.calls, [])
+        self.assertEqual(
+            calls,
+            [
+                (
+                    "https://api.crossref.org/works/10.1234/example-1",
+                    FETCH_TIMEOUT,
+                    MAX_FETCH_BYTES,
+                )
+            ],
+        )
 
 
 class FetchResultTests(unittest.TestCase):
