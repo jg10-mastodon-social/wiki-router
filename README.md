@@ -201,3 +201,7 @@ wikirc/books.py     archive.org and Open Library resolution
 wikirc/append.py    bullet planning and application
 wikirc/evaluate.py  fixture replay
 ```
+
+## Licence
+
+MIT. See `LICENSE`.
