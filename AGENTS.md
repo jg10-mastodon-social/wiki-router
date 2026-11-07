@@ -42,7 +42,30 @@ not copied from any earlier version; behaviour is re-derived from tests.
 ```
 bin/wiki-router      shim: repo root onto sys.path, then wikirc.cli:main
 wikirc/config.py     environment loading and validation
-wikirc/cli.py        argument parsing and subcommand dispatch
+wikirc/cli.py        argument parsing and dispatch
+wikirc/index.py      label-index parsing
+wikirc/corpus.py     wiki discovery, page resolution, text extraction
+wikirc/text.py       stopwords, stemming, tokenising
+wikirc/score.py      tf-idf ranking and boosts
+wikirc/store.py      index build, fingerprint, persistence
+wikirc/router.py     route payload assembly
+wikirc/fetch.py      fetch orchestration and HTML extraction
+wikirc/http.py       HTTP transport
+wikirc/result.py     the FetchResult type
+wikirc/metadata.py   DOI resolution through Crossref
+wikirc/books.py      archive.org and Open Library resolution
+wikirc/append.py     bullet planning and application
+wikirc/evaluate.py   fixture replay
 tests/               unittest modules
-tests/fixtures/      synthetic corpus and eval fixture
+tests/fixtures/      synthetic corpora and eval fixtures
+docs/measurements.md recorded parity and hypothesis results
 ```
+
+## Verify
+
+```bash
+python3 -m unittest discover -s tests
+```
+
+No test touches the network: HTTP is injected and metadata evals serve recorded
+payloads. Keep it that way.
