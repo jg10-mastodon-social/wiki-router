@@ -133,6 +133,123 @@
         "creator": "Lena Marr",
         "date": "1990"
       }
+    },
+    {
+      "note": "publisher page on a book-ish host: valid ISBN-13 resolves through Open Library",
+      "url": "https://press.bookshop.example/tidewater-almanac",
+      "html": "book/publisher-isbn13.html",
+      "responses": {
+        "https://openlibrary.org/api/books?bibkeys=ISBN:9780000000019&format=json&jscmd=data": "book/openlibrary-tidewater.json"
+      },
+      "expects": {
+        "ok": true,
+        "final_url": "https://press.bookshop.example/tidewater-almanac",
+        "title": "Tidewater Almanac: a coastal field guide",
+        "description": "",
+        "source": "openlibrary",
+        "creator": "Mira Vell",
+        "date": "1974",
+        "isbn": "9780000000019",
+        "canonical": "https://openlibrary.org/isbn/9780000000019",
+        "title_noisy": false,
+        "error": ""
+      }
+    },
+    {
+      "note": "hyphenated ISBN-10 in page text is normalised, checksum-validated and resolved",
+      "url": "https://press.bookshop.example/lantern-makers",
+      "html": "book/publisher-isbn10.html",
+      "responses": {
+        "https://openlibrary.org/api/books?bibkeys=ISBN:0000000019&format=json&jscmd=data": "book/openlibrary-lantern.json"
+      },
+      "expects": {
+        "ok": true,
+        "title": "The Lantern Makers: a study of coastal workshops",
+        "description": "",
+        "source": "openlibrary",
+        "creator": "Oren Pell; Inez Sable",
+        "date": "2011",
+        "isbn": "0000000019",
+        "canonical": "https://openlibrary.org/isbn/0000000019",
+        "error": ""
+      }
+    },
+    {
+      "note": "invalid checksum on a book-ish host stays on the HTML title; a lookup would hit the poison record",
+      "url": "https://press.bookshop.example/quarry-songs",
+      "html": "book/publisher-invalid-isbn.html",
+      "responses": {
+        "https://openlibrary.org/api/books?bibkeys=ISBN:9780000000034&format=json&jscmd=data": "book/openlibrary-poison-invalid.json"
+      },
+      "expects": {
+        "ok": true,
+        "title": "Quarry Songs",
+        "description": "Collected verse from an invented quarry town.",
+        "source": "html",
+        "creator": "",
+        "date": "",
+        "isbn": "",
+        "canonical": "",
+        "title_noisy": false,
+        "error": ""
+      }
+    },
+    {
+      "note": "an essay that merely cites a valid ISBN is not hijacked; the poison record fails any lookup",
+      "url": "https://journal.example.com/essays/field-notes",
+      "html": "book/journal-cites-isbn.html",
+      "responses": {
+        "https://openlibrary.org/api/books?bibkeys=ISBN:9780000000040&format=json&jscmd=data": "book/openlibrary-poison-citation.json"
+      },
+      "expects": {
+        "ok": true,
+        "title": "Field Notes on Reading",
+        "description": "An essay that cites an edition number.",
+        "source": "html",
+        "creator": "",
+        "date": "",
+        "isbn": "",
+        "canonical": "",
+        "error": ""
+      }
+    },
+    {
+      "note": "noisy title on a non-book host still takes the ISBN path",
+      "url": "https://portal.example.net/edition/8821",
+      "html": "book/access-denied.html",
+      "responses": {
+        "https://openlibrary.org/api/books?bibkeys=ISBN:9780000000057&format=json&jscmd=data": "book/openlibrary-access.json"
+      },
+      "expects": {
+        "ok": true,
+        "title": "Salt Marsh Ledger: notes from a tidal year",
+        "description": "",
+        "source": "openlibrary",
+        "creator": "Toma Rill",
+        "date": "1988",
+        "isbn": "9780000000057",
+        "canonical": "https://openlibrary.org/isbn/9780000000057",
+        "title_noisy": false,
+        "error": ""
+      }
+    },
+    {
+      "note": "/books/ in the path makes an otherwise unknown host book-ish",
+      "url": "https://catalogue.example.org/books/pale-dune-survey",
+      "html": "book/catalogue-books-path.html",
+      "responses": {
+        "https://openlibrary.org/api/books?bibkeys=ISBN:9780000000064&format=json&jscmd=data": "book/openlibrary-salt.json"
+      },
+      "expects": {
+        "ok": true,
+        "title": "Pale Dune Survey: a field atlas",
+        "source": "openlibrary",
+        "creator": "Rae Quill",
+        "date": "1962",
+        "isbn": "9780000000064",
+        "canonical": "https://openlibrary.org/isbn/9780000000064",
+        "error": ""
+      }
     }
   ]
 }

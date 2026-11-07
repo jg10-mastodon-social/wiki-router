@@ -1,0 +1,12 @@
+{
+  "ISBN:9780000000040": {
+    "title": "Poisoned by an unrelated citation",
+    "subtitle": "",
+    "authors": [
+      {
+        "name": "Wrong Author"
+      }
+    ],
+    "publish_date": "1999"
+  }
+}

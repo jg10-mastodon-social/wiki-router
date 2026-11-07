@@ -87,9 +87,11 @@ list page is reachable by the domains it cites.
 Candidates that score zero are omitted. When `reliability` is `low`, treat the
 order as noise: establish the title first (see below) or pass `--context`.
 
-DOIs resolve through Crossref and archive.org details pages through their
-metadata API plus Open Library, so a publisher that answers 403 no longer
-poisons the title.
+DOIs resolve through Crossref, archive.org details pages through their metadata
+API, and any book page carrying a checksum-valid ISBN — on a bookseller host or
+under a `/books/` path — through Open Library. A publisher that answers 403 no
+longer poisons the title. An ordinary page that merely cites an ISBN is left
+alone.
 
 ## Evaluation
 

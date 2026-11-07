@@ -1,0 +1,12 @@
+{
+  "ISBN:9780000000034": {
+    "title": "Poisoned by an invalid checksum",
+    "subtitle": "",
+    "authors": [
+      {
+        "name": "Wrong Author"
+      }
+    ],
+    "publish_date": "1999"
+  }
+}

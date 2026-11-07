@@ -1,12 +1,19 @@
-"""Resolve book metadata for archive.org details pages.
+"""Resolve book metadata for book pages.
 
 An archive.org item page answers with page chrome in the title rather than the
 catalog title. The item metadata is enough to route: title, creator and date
 come from the item record. A valid ISBN lets Open Library supply a cleaner
-record, and its ISBN page is then the canonical URL.
+record, and its ISBN page is then the canonical URL. A publisher or bookseller
+page works the same way when it carries a valid ISBN.
+
+Host entries match at DNS label boundaries. An entry that ends with a dot (for
+example ``amazon.``) matches the label under any TLD, which keeps the list
+short and lets invented fixture hosts carry a generic bookshop label without
+adding each fixture's domain here.
 """
 
 import re
+from urllib.parse import urlsplit
 
 from .http import MAX_FETCH_BYTES
 from .metadata import compose_title
@@ -15,11 +22,67 @@ from .result import FetchResult
 ARCHIVE_DETAILS = re.compile(
     r"^https?://(?:www\.)?archive\.org/details/([^/?#]+)"
 )
+BOOK_HOSTS = (
+    "amazon.",
+    "barnesandnoble.",
+    "bookdepository.",
+    "bookshop.",
+    "books.google.",
+    "goodreads.",
+    "openlibrary.org",
+    "penguinrandomhouse.",
+    "harpercollins.",
+    "simonandschuster.",
+    "macmillan.",
+    "hachettebookgroup.",
+)
+ISBN13_PATTERN = re.compile(r"(?<![\dXx])(?:\d[-\s]?){12}\d(?![\dXx])")
+ISBN10_PATTERN = re.compile(r"(?<![\dXx])(?:\d[-\s]?){9}[\dXx](?![\dXx])")
 CHROME = (
     " : free download, borrow, and streaming",
     " : internet archive",
 )
 AUTHOR_TAIL = re.compile(r",\s*[^,]+,\s*[^,]+,\s*\d{4}\s*-?\s*$")
+
+
+def looks_like_book_url(url: str) -> bool:
+    """Return whether a URL looks like a book page on a host or path."""
+    parts = urlsplit(url.strip())
+    host = (parts.hostname or "").lower()
+    if host:
+        padded = f".{host}."
+        if any(f".{entry}" in padded for entry in BOOK_HOSTS):
+            return True
+
+    path = parts.path.lower()
+    return "/books/" in path or path.rstrip("/").endswith("/books")
+
+
+def valid_isbns(text: str) -> list[str]:
+    """Return the checksum-valid ISBNs in ``text``, ISBN-13s first.
+
+    Hyphens and whitespace inside a number are ignored. Order within each
+    length is the order of appearance and duplicates keep their first place. A
+    ten-digit window inside a longer hyphenated number is not a separate ISBN,
+    so those matches are skipped even when their checksum happens to be valid.
+    """
+    thirteen = list(ISBN13_PATTERN.finditer(text))
+    thirteen_spans = [match.span() for match in thirteen]
+    found = []
+    for match in thirteen:
+        candidate = re.sub(r"[-\s]", "", match.group(0)).upper()
+        if _valid_isbn13(candidate) and candidate not in found:
+            found.append(candidate)
+    for match in ISBN10_PATTERN.finditer(text):
+        if any(
+            start <= match.start() and match.end() <= end
+            for start, end in thirteen_spans
+        ):
+            continue
+        candidate = re.sub(r"[-\s]", "", match.group(0)).upper()
+        if _valid_isbn10(candidate) and candidate not in found:
+            found.append(candidate)
+    return found
 
 
 def archive_identifier(url: str) -> str | None:
@@ -92,19 +155,15 @@ def resolve_archive(
             record.get(f"ISBN:{isbn}") if isinstance(record, dict) else None
         )
         if isinstance(entry, dict):
-            openlibrary_title = compose_title(
-                _text(entry.get("title")), _text(entry.get("subtitle"))
-            )
-            if openlibrary_title:
-                title = openlibrary_title
-            authors = _authors(entry.get("authors"))
-            if authors:
-                creator = authors
-            publish_date = _text(entry.get("publish_date"))
-            if publish_date:
-                date = publish_date
+            fields = _openlibrary_fields(entry)
+            if fields["title"]:
+                title = fields["title"]
+            if fields["creator"]:
+                creator = fields["creator"]
+            if fields["date"]:
+                date = fields["date"]
             source = "openlibrary"
-            canonical = f"https://openlibrary.org/isbn/{isbn}"
+            canonical = _isbn_url(isbn)
 
     return FetchResult(
         ok=True,
@@ -119,6 +178,47 @@ def resolve_archive(
         title_noisy=False,
         error="",
     )
+
+
+def resolve_isbn(isbn: str, *, timeout: int, json_getter) -> "FetchResult":
+    """Build a ``FetchResult`` from the Open Library record for ``isbn``."""
+    url = _isbn_url(isbn)
+    record = _openlibrary_record(isbn, timeout, json_getter)
+    entry = record.get(f"ISBN:{isbn}") if isinstance(record, dict) else None
+    if not isinstance(entry, dict):
+        return FetchResult.failed(url, "no openlibrary record")
+
+    fields = _openlibrary_fields(entry)
+    if not fields["title"]:
+        return FetchResult.failed(url, "no openlibrary record")
+
+    return FetchResult(
+        ok=True,
+        final_url=url,
+        title=fields["title"],
+        description="",
+        source="openlibrary",
+        creator=fields["creator"],
+        date=fields["date"],
+        isbn=isbn,
+        canonical=url,
+        title_noisy=False,
+        error="",
+    )
+
+
+def _isbn_url(isbn: str) -> str:
+    return f"https://openlibrary.org/isbn/{isbn}"
+
+
+def _openlibrary_fields(entry: dict) -> dict:
+    return {
+        "title": compose_title(
+            _text(entry.get("title")), _text(entry.get("subtitle"))
+        ),
+        "creator": _authors(entry.get("authors")),
+        "date": _text(entry.get("publish_date")),
+    }
 
 
 def _isbn_parts(value) -> list[str]:

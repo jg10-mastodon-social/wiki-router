@@ -6,13 +6,17 @@ the URL that serves them, and the fields the result must carry. Payload paths
 are relative to the fixture file, so ``doi/simple.json`` means
 ``tests/fixtures/metadata/doi/simple.json`` for the committed fixture.
 
-``run_cases`` builds one ``json_getter`` per case. That getter raises
-``LookupError`` for any URL the case did not map, so a missing payload can
-never fall through to the network.
+``run_cases`` builds one ``json_getter`` and one HTML ``getter`` per case. Each
+getter raises ``LookupError`` for any URL the case did not map, so a missing
+payload can never fall through to the network. A case opts into an HTML payload
+with ``"html": "book/page.html"``; the getter then serves those bytes as
+``text/html`` for the case's URL and raises for every other URL.
 """
 
 import json
 from pathlib import Path
+
+HTML_TYPE = "text/html; charset=utf-8"
 
 _MISSING = object()
 
@@ -23,6 +27,17 @@ def _payload_getter(responses: dict, base: Path):
             raise LookupError(url)
         path = base / responses[url]
         return json.loads(path.read_text(encoding="utf-8"))
+
+    return getter
+
+
+def _html_getter(url: str, payload: str | None, base: Path):
+    path = base / payload if payload else None
+
+    def getter(request_url, timeout=None, limit=None):
+        if path is None or request_url != url:
+            raise LookupError(request_url)
+        return url, HTML_TYPE, path.read_bytes()
 
     return getter
 
@@ -40,12 +55,15 @@ def run_cases(path: Path, fetcher) -> list[dict]:
             "url": entry["url"],
             "note": entry.get("note", ""),
         }
-        getter = _payload_getter(
+        json_getter = _payload_getter(
             entry.get("responses", {}), path.parent
         )
+        getter = _html_getter(entry["url"], entry.get("html"), path.parent)
 
         try:
-            result = fetcher(entry["url"], getter)
+            result = fetcher(
+                entry["url"], getter=getter, json_getter=json_getter
+            )
         except Exception as error:  # a case may not fall through silently
             results.append(
                 {

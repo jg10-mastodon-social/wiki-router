@@ -6,7 +6,13 @@ from dataclasses import replace
 from html.parser import HTMLParser
 from urllib.parse import unquote, urljoin, urlsplit
 
-from .books import archive_identifier, resolve_archive
+from .books import (
+    archive_identifier,
+    looks_like_book_url,
+    resolve_archive,
+    resolve_isbn,
+    valid_isbns,
+)
 from .http import FETCH_TIMEOUT, MAX_FETCH_BYTES, USER_AGENT, http_get, json_get
 from .metadata import doi_from_url, resolve_doi
 from .result import FetchResult
@@ -141,14 +147,16 @@ def fetch(
     if media_type not in SUPPORTED_TYPES:
         return FetchResult.failed(url, "unsupported content type")
 
-    parsed = extract(body.decode("utf-8", errors="replace"), final_url)
+    page_html = body.decode("utf-8", errors="replace")
+    parsed = extract(page_html, final_url)
     title = clean_title(parsed["title"], final_url)
+    description = parsed["description"]
 
-    return FetchResult(
+    result = FetchResult(
         ok=True,
         final_url=final_url,
         title=title,
-        description=parsed["description"],
+        description=description,
         source="html",
         creator="",
         date="",
@@ -157,6 +165,31 @@ def fetch(
         title_noisy=title_is_noisy(title, final_url),
         error="",
     )
+
+    if result.title_noisy or looks_like_book_url(url):
+        haystack = " ".join(
+            (url, final_url, title, description, page_html[:4000])
+        )
+        candidates = valid_isbns(haystack)
+        if candidates:
+            reader = json_get if json_getter is None else json_getter
+            resolved = resolve_isbn(
+                candidates[0], timeout=timeout, json_getter=reader
+            )
+            if resolved.ok:
+                return replace(
+                    result,
+                    title=resolved.title,
+                    description=resolved.description,
+                    source="openlibrary",
+                    creator=resolved.creator,
+                    date=resolved.date,
+                    isbn=resolved.isbn,
+                    canonical=resolved.canonical,
+                    title_noisy=False,
+                )
+
+    return result
 
 
 def _words(text: str) -> list[str]:
