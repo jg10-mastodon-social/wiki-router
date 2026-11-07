@@ -5,15 +5,15 @@ import json
 import os
 import re
 import tempfile
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
 
 from .corpus import Page, discover_wikis
-from .score import Document
+from .score import Document, document_norm, host_of, idf_of, normalise_url
 from .text import tokenize
 
-INDEX_VERSION = 1
+INDEX_VERSION = 2
 INDEX_NAME = "index.json"
 SUMMARY_LIMIT = 160
 
@@ -49,6 +49,10 @@ def document_from_page(page: Page) -> Document:
         links=page.links,
         text=page.text,
         summary=summary_of(page.text),
+        sites=tuple(dict.fromkeys(host_of(link) for link in page.links)),
+        link_keys=tuple(
+            dict.fromkeys(normalise_url(link) for link in page.links)
+        ),
     )
 
 
@@ -76,6 +80,12 @@ def build(notes: Path, pod_base: str | None) -> IndexPayload:
         for page in wiki.pages
     ]
     documents.sort(key=lambda document: (document.wiki, document.id))
+
+    idf = idf_of(documents)
+    documents = [
+        replace(document, norm=document_norm(document.terms, idf))
+        for document in documents
+    ]
 
     return IndexPayload(
         version=INDEX_VERSION,
@@ -153,6 +163,9 @@ def _document_to_dict(document: Document) -> dict:
         "terms": dict(document.terms),
         "headings": list(document.headings),
         "links": list(document.links),
+        "norm": document.norm,
+        "sites": list(document.sites),
+        "link_keys": list(document.link_keys),
         "summary": document.summary,
     }
 
@@ -168,4 +181,7 @@ def _document_from_dict(data: dict) -> Document:
         links=tuple(data["links"]),
         text="",
         summary=data["summary"],
+        norm=float(data.get("norm", 0.0)),
+        sites=tuple(data.get("sites", ())),
+        link_keys=tuple(data.get("link_keys", ())),
     )

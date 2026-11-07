@@ -19,6 +19,9 @@ class Document:
     links: tuple[str, ...]
     text: str
     summary: str = ""
+    norm: float = 0.0
+    sites: tuple[str, ...] = ()
+    link_keys: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -56,17 +59,21 @@ def rank(
     if not query_terms:
         return []
 
-    idf = _idf(documents)
+    idf = idf_of(documents)
     query_weights = {
         term: count * idf(term) for term, count in query_terms.items()
     }
     query_norm = math.sqrt(sum(weight * weight for weight in query_weights.values()))
     query_set = set(query_terms)
+    normalised_url = normalise_url(query.url)
+    host = host_of(query.url)
 
     candidates = []
     for document in documents:
         cosine = _cosine(document, query_weights, query_norm, idf)
-        boosts, heading_match, suggested = _boosts(document, query, query_set)
+        boosts, heading_match, suggested = _boosts(
+            document, query, query_set, host, normalised_url
+        )
         score = round(cosine + sum(boosts.values()), 4)
         candidates.append(
             Candidate(
@@ -78,7 +85,7 @@ def rank(
                 cosine=round(cosine, 4),
                 boosts=boosts,
                 matched=tuple(sorted(query_set & document.terms.keys())[:8]),
-                already_linked=_already_linked(document, query.url),
+                already_linked=_already_linked(document, normalised_url),
                 heading_match=heading_match,
                 suggested_section=suggested,
                 headings=document.headings,
@@ -133,19 +140,34 @@ def _query_terms(query: Query) -> dict[str, int]:
     return tokenize(text)
 
 
-def _idf(documents: Sequence[Document]):
+def document_frequencies(documents: Sequence[Document]) -> dict[str, int]:
+    frequencies: dict[str, int] = {}
+    for document in documents:
+        for term in document.terms:
+            frequencies[term] = frequencies.get(term, 0) + 1
+    return frequencies
+
+
+def idf_of(documents: Sequence[Document]):
     total = len(documents)
-    counts: dict[str, int] = {}
+    frequencies = document_frequencies(documents)
 
     def idf(term: str) -> float:
-        if term not in counts:
-            document_frequency = sum(
-                1 for document in documents if term in document.terms
-            )
-            counts[term] = math.log((total + 1) / (document_frequency + 1)) + 1
-        return counts[term]
+        document_frequency = frequencies.get(term, 0)
+        return math.log((total + 1) / (document_frequency + 1)) + 1
 
     return idf
+
+
+def document_norm(terms: Mapping[str, int], idf) -> float:
+    """The tf-idf length of one document, as ``rank`` measures it."""
+
+    total = 0.0
+    for term, count in terms.items():
+        if count > 0:
+            weight = (1 + math.log(count)) * idf(term)
+            total += weight * weight
+    return math.sqrt(total)
 
 
 def _cosine(
@@ -154,21 +176,21 @@ def _cosine(
     query_norm: float,
     idf,
 ) -> float:
-    weights = {
-        term: (1 + math.log(count)) * idf(term)
-        for term, count in document.terms.items()
-        if count > 0
-    }
-    document_norm = math.sqrt(sum(weight * weight for weight in weights.values()))
-    if query_norm == 0 or document_norm == 0:
+    if query_norm == 0:
         return 0.0
 
-    dot = sum(
-        weight * weights[term]
-        for term, weight in query_weights.items()
-        if term in weights
-    )
-    return dot / (query_norm * document_norm)
+    norm = document.norm
+    if norm == 0:
+        norm = document_norm(document.terms, idf)
+    if norm == 0:
+        return 0.0
+
+    dot = 0.0
+    for term, weight in query_weights.items():
+        count = document.terms.get(term, 0)
+        if count > 0:
+            dot += weight * ((1 + math.log(count)) * idf(term))
+    return dot / (query_norm * norm)
 
 
 def _label_tokens(label: str) -> set[str]:
@@ -196,11 +218,15 @@ def _collapse(value: str) -> str:
 
 
 def _boosts(
-    document: Document, query: Query, query_set: set[str]
+    document: Document,
+    query: Query,
+    query_set: set[str],
+    host: str,
+    normalised_url: str,
 ) -> tuple[dict[str, float], bool, str | None]:
     boosts = _label_boost(document.label, query, query_set)
 
-    if _shares_other_site(document.links, query.url):
+    if _shares_other_site(document, host, normalised_url):
         boosts["same_domain"] = 0.1
 
     heading_match = False
@@ -220,14 +246,27 @@ def _boosts(
     return boosts, heading_match, suggested
 
 
-def _shares_other_site(links: Sequence[str], url: str) -> bool:
-    normalised = normalise_url(url)
+def _sites_of(links: Sequence[str]) -> set[str]:
+    return {host_of(link) for link in links}
+
+
+def _keys_of(links: Sequence[str]) -> set[str]:
+    return {normalise_url(link) for link in links}
+
+
+def _shares_other_site(
+    document: Document, host: str, normalised_url: str
+) -> bool:
+    sites = document.sites or _sites_of(document.links)
+    if host not in sites:
+        return False
+
+    keys = document.link_keys or _keys_of(document.links)
     return any(
-        same_site(link, url) and normalise_url(link) != normalised
-        for link in links
+        key != normalised_url and host_of(key) == host for key in keys
     )
 
 
-def _already_linked(document: Document, url: str) -> bool:
-    normalised = normalise_url(url)
-    return any(normalise_url(link) == normalised for link in document.links)
+def _already_linked(document: Document, normalised_url: str) -> bool:
+    keys = document.link_keys or _keys_of(document.links)
+    return normalised_url in keys

@@ -1,14 +1,40 @@
+import time
 import unittest
+from collections.abc import Sequence
+from dataclasses import replace
 
 from wikirc.score import (
     Document,
     Query,
+    document_frequencies,
+    document_norm,
     host_of,
+    idf_of,
     normalise_url,
     rank,
     same_site,
 )
 from wikirc.text import tokenize
+
+
+class CountingSequence(Sequence):
+    """A document sequence that counts every element yielded or indexed."""
+
+    def __init__(self, items):
+        self._items = list(items)
+        self.accesses = 0
+
+    def __len__(self):
+        return len(self._items)
+
+    def __iter__(self):
+        for item in self._items:
+            self.accesses += 1
+            yield item
+
+    def __getitem__(self, index):
+        self.accesses += 1
+        return self._items[index]
 
 
 def make_document(
@@ -21,6 +47,9 @@ def make_document(
     links=(),
     text="",
     summary="",
+    norm=0.0,
+    sites=(),
+    link_keys=(),
 ):
     return Document(
         id=id,
@@ -32,6 +61,9 @@ def make_document(
         links=links,
         text=text,
         summary=summary,
+        norm=norm,
+        sites=sites,
+        link_keys=link_keys,
     )
 
 
@@ -335,6 +367,179 @@ class UrlHelperTests(unittest.TestCase):
         self.assertFalse(
             same_site("https://example.com/a", "https://example.org/b")
         )
+
+
+class PrecomputedFieldTests(unittest.TestCase):
+    def test_a_precomputed_norm_replaces_the_computed_one(self):
+        documents = [
+            make_document(id="a", terms={"solar": 1}),
+            make_document(id="b", terms={"water": 1}),
+        ]
+        query = Query(url="https://example.com/", title="solar")
+
+        single = rank([replace(documents[0], norm=1.0), documents[1]], query)[0]
+        double = rank(
+            [replace(documents[0], norm=2.0), documents[1]], query
+        )[0]
+
+        self.assertGreater(single.cosine, 0.0)
+        self.assertAlmostEqual(single.cosine, double.cosine * 2.0, places=3)
+
+    def test_precomputed_sites_and_link_keys_win_over_the_links(self):
+        document = make_document(
+            terms={"solar": 1},
+            links=("https://example.com/elsewhere",),
+            sites=("other.test",),
+            link_keys=("https://other.test/elsewhere",),
+        )
+
+        candidate = rank(
+            [document], Query(url="https://example.com/solar/")
+        )[0]
+
+        self.assertNotIn("same_domain", candidate.boosts)
+        self.assertFalse(candidate.already_linked)
+
+    def test_precomputed_link_data_supplies_the_same_domain_boost(self):
+        document = make_document(
+            terms={"solar": 1},
+            sites=("example.com",),
+            link_keys=("https://example.com/elsewhere",),
+        )
+
+        candidate = rank(
+            [document], Query(url="https://example.com/solar/")
+        )[0]
+
+        self.assertEqual(candidate.boosts["same_domain"], 0.1)
+        self.assertFalse(candidate.already_linked)
+
+    def test_linking_only_the_query_url_is_not_another_site(self):
+        url = "https://example.com/solar/"
+        document = make_document(terms={"solar": 1}, links=(url,))
+
+        candidate = rank([document], Query(url=url))[0]
+
+        self.assertTrue(candidate.already_linked)
+        self.assertNotIn("same_domain", candidate.boosts)
+
+    def test_a_link_elsewhere_is_not_another_link_on_the_query_host(self):
+        url = "https://example.com/solar/"
+        document = make_document(
+            terms={"solar": 1},
+            links=(url, "https://other.test/elsewhere"),
+            sites=("example.com", "other.test"),
+            link_keys=(
+                "https://example.com/solar",
+                "https://other.test/elsewhere",
+            ),
+        )
+        query = Query(url=url)
+
+        prepared = rank([document], query)[0]
+        stripped = rank(
+            [replace(document, norm=0.0, sites=(), link_keys=())], query
+        )[0]
+
+        self.assertTrue(prepared.already_linked)
+        self.assertNotIn("same_domain", prepared.boosts)
+        self.assertEqual(prepared, stripped)
+
+    def test_a_second_link_on_the_query_host_is_another_site(self):
+        url = "https://example.com/solar/"
+        document = make_document(
+            terms={"solar": 1},
+            links=(url, "https://example.com/elsewhere"),
+            sites=("example.com",),
+            link_keys=(
+                "https://example.com/solar",
+                "https://example.com/elsewhere",
+            ),
+        )
+
+        candidate = rank([document], Query(url=url))[0]
+
+        self.assertTrue(candidate.already_linked)
+        self.assertEqual(candidate.boosts["same_domain"], 0.1)
+
+
+class DocumentFrequencyTests(unittest.TestCase):
+    def test_counts_documents_per_term(self):
+        documents = [
+            make_document(id="a", terms={"solar": 2, "panel": 1}),
+            make_document(id="b", terms={"solar": 1}),
+            make_document(id="c", terms={"water": 1}),
+        ]
+
+        frequencies = document_frequencies(documents)
+
+        self.assertEqual(frequencies["solar"], 2)
+        self.assertEqual(frequencies["panel"], 1)
+        self.assertEqual(frequencies["water"], 1)
+        self.assertNotIn("wind", frequencies)
+
+
+class RankingCostTests(unittest.TestCase):
+    def test_document_frequencies_makes_a_single_pass(self):
+        documents = [
+            make_document(
+                id=f"doc{index:04d}",
+                terms={
+                    f"term{(index * 3 + offset) % 120}": 1 for offset in range(90)
+                },
+            )
+            for index in range(40)
+        ]
+        counted = CountingSequence(documents)
+        query = Query(url="https://example.com/term0/")
+
+        rank(counted, query)
+
+        self.assertLess(counted.accesses, 10 * len(documents))
+
+    def test_ranking_1200_prepared_documents_finishes_quickly(self):
+        documents = [
+            make_document(
+                id=f"doc{index:04d}",
+                terms={
+                    **{f"term{offset}": 1 for offset in range(10)},
+                    **{
+                        f"unique{index}-{offset}": 1 for offset in range(60)
+                    },
+                },
+                links=tuple(
+                    f"https://site{offset % 12}.example.com/page/{index}"
+                    for offset in range(8)
+                ),
+            )
+            for index in range(1200)
+        ]
+        idf = idf_of(documents)
+        documents = [
+            replace(
+                document,
+                norm=document_norm(document.terms, idf),
+                sites=tuple(
+                    dict.fromkeys(host_of(link) for link in document.links)
+                ),
+                link_keys=tuple(
+                    dict.fromkeys(
+                        normalise_url(link) for link in document.links
+                    )
+                ),
+            )
+            for document in documents
+        ]
+        query = Query(
+            url="https://example.com/term0/", title="term1 term2"
+        )
+
+        started = time.perf_counter()
+        candidates = rank(documents, query)
+        elapsed = time.perf_counter() - started
+
+        self.assertTrue(candidates)
+        self.assertLess(elapsed, 2.0)
 
 
 if __name__ == "__main__":

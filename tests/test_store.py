@@ -1,15 +1,17 @@
 import dataclasses
 import json
+import math
 import os
 import shutil
 import tempfile
 import unittest
 from datetime import datetime
 from pathlib import Path
+from unittest import mock
 
 from wikirc import store
 from wikirc.corpus import Page
-from wikirc.score import Document
+from wikirc.score import Document, Query, rank
 from wikirc.text import tokenize
 
 FIXTURES = Path(__file__).parent / "fixtures" / "corpus"
@@ -124,7 +126,7 @@ class BuildTests(unittest.TestCase):
     def test_payload_metadata(self):
         payload = store.build(FIXTURES, None)
 
-        self.assertEqual(payload.version, 1)
+        self.assertEqual(payload.version, 2)
         parsed = datetime.fromisoformat(payload.generated)
         self.assertIsNotNone(parsed.tzinfo)
         self.assertEqual(len(payload.fingerprint), 64)
@@ -207,6 +209,89 @@ class WriteLoadTests(unittest.TestCase):
                 store.load(Path(tmp) / "state")
 
 
+class PrecomputationTests(unittest.TestCase):
+    def test_every_document_carries_its_tf_idf_norm(self):
+        payload = store.build(FIXTURES, None)
+        total = len(payload.documents)
+        frequencies: dict[str, int] = {}
+        for document in payload.documents:
+            for term in document.terms:
+                frequencies[term] = frequencies.get(term, 0) + 1
+
+        def idf(term):
+            return math.log((total + 1) / (frequencies.get(term, 0) + 1)) + 1
+
+        for document in payload.documents:
+            expected = math.sqrt(
+                sum(
+                    ((1 + math.log(count)) * idf(term)) ** 2
+                    for term, count in document.terms.items()
+                    if count > 0
+                )
+            )
+            self.assertGreater(document.norm, 0.0)
+            self.assertAlmostEqual(document.norm, expected, places=12)
+
+    def test_links_are_precomputed_into_sites_and_link_keys(self):
+        payload = store.build(FIXTURES, None)
+        watering = next(
+            document
+            for document in payload.documents
+            if document.id == "watering.md"
+        )
+
+        self.assertEqual(watering.sites, ("pod.example.com",))
+        self.assertEqual(
+            watering.link_keys,
+            (
+                "https://pod.example.com/pod/notes/garden/seeds.md",
+                "https://pod.example.com/pod/notes/garden/watering.md",
+            ),
+        )
+
+    def test_sites_are_deduplicated_without_losing_order(self):
+        page = _page(
+            links=(
+                "https://example.com/one",
+                "https://www.example.com/two",
+                "https://elsewhere.test/three",
+            )
+        )
+
+        document = store.document_from_page(page)
+
+        self.assertEqual(document.sites, ("example.com", "elsewhere.test"))
+        self.assertEqual(len(document.link_keys), 3)
+
+
+class ParityTests(unittest.TestCase):
+    def test_rank_matches_when_the_precomputed_fields_are_stripped(self):
+        payload = store.build(FIXTURES, None)
+        prepared = list(payload.documents)
+        stripped = [
+            dataclasses.replace(document, norm=0.0, sites=(), link_keys=())
+            for document in prepared
+        ]
+        queries = [
+            Query(url="https://example.com/soil-compost/", title="soil compost"),
+            Query(
+                url="https://pod.example.com/pod/notes/garden/watering.md",
+                title="Watering",
+            ),
+            Query(url="https://example.com/watering/", title="watering"),
+            Query(url="https://example.com/cycle-commute/", title="cycle commute"),
+            Query(url="https://example.com/", title="solar power panels"),
+            Query(url="https://example.com/nothing-matches/"),
+        ]
+
+        for query in queries:
+            with self.subTest(url=query.url):
+                self.assertEqual(
+                    rank(prepared, query, top=10),
+                    rank(stripped, query, top=10),
+                )
+
+
 class StalenessTests(unittest.TestCase):
     def test_stale_when_the_index_is_missing(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -244,6 +329,14 @@ class StalenessTests(unittest.TestCase):
             after = store.fingerprint(moved, None)
 
         self.assertEqual(before, after)
+
+    def test_an_index_written_by_a_previous_version_is_stale(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            state = Path(tmp) / "state"
+            with mock.patch.object(store, "INDEX_VERSION", 1):
+                store.write(store.build(FIXTURES, None), state)
+
+            self.assertTrue(store.is_stale(FIXTURES, None, state))
 
     def test_unreadable_index_is_stale(self):
         with tempfile.TemporaryDirectory() as tmp:
