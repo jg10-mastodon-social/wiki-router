@@ -85,6 +85,18 @@ Reverted. Recorded so it is not retried blind: the idea is sound for link
 collectors and wrong for citation-heavy pages, and the two are indistinguishable
 by host alone.
 
+## 2026-11-07 — redirects (kept)
+
+Content migrating between pages leaves the old page holding enough of the
+original wording to outrank its replacement. Rather than infer that from a score
+margin, a redirect map states the move.
+
+Measured on the unfiled corpus with a map built only from identical labels across
+collections — 133 pairs, derived without looking at the fixture — hit@1 moved from
+7/17 to 8/17 and hit@5 from 11/17 to 12/17, with no case regressing. A map that
+covers the pages actually migrated should do better; this one is a placeholder
+for real migration data.
+
 ## 2026-11-07 — both resolved
 
 Re-measured after metadata resolution landed, same inputs:

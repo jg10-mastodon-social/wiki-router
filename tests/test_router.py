@@ -42,6 +42,8 @@ CANDIDATE_KEYS = [
     "suggested_section",
     "headings",
     "summary",
+    "redirected",
+    "redirectedFrom",
 ]
 
 

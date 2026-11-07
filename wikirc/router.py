@@ -1,6 +1,6 @@
 """Assemble the routing payload consumed by the webhook."""
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from urllib.parse import unquote, urlsplit
 
 from . import CONTRACT
@@ -37,6 +37,7 @@ def route_payload(
     top: int = 5,
     wiki: str = "",
     exclude_wiki: str = "",
+    redirects: Mapping[str, str] = {},
 ) -> dict:
     selected = [
         document
@@ -55,9 +56,13 @@ def route_payload(
         ),
         top=len(selected),
     )
-    candidates = [
-        candidate for candidate in candidates if candidate.score > 0
-    ][: max(top, 0)]
+    candidates = [candidate for candidate in candidates if candidate.score > 0]
+    if redirects:
+        from .redirects import apply_redirects, page_key
+
+        by_key = {page_key(document.wiki, document.id): document for document in selected}
+        candidates = apply_redirects(candidates, redirects, by_key)
+    candidates = candidates[: max(top, 0)]
 
     return {
         "contract": CONTRACT,
@@ -90,6 +95,8 @@ def _candidate(candidate: Candidate) -> dict:
         "suggested_section": candidate.suggested_section,
         "headings": list(candidate.headings),
         "summary": candidate.summary,
+        "redirected": candidate.redirected,
+        "redirectedFrom": candidate.redirected_from,
     }
 
 

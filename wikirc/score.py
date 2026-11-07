@@ -47,6 +47,8 @@ class Candidate:
     suggested_section: str | None
     headings: tuple[str, ...]
     summary: str
+    redirected: bool = False
+    redirected_from: str | None = None
 
 
 def rank(

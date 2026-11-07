@@ -116,6 +116,23 @@ the top N, so a regression fails a command rather than needing inspection.
 of them lands in the top N. Entries may be wiki-relative (`watering.md`) or
 wiki-qualified (`garden/watering.md`).
 
+### Redirected pages
+
+When content moves between pages, the old page keeps enough of the original
+wording to outrank its replacement, and ranking cannot know that. A redirect
+file states the move:
+
+```json
+// $WIKI_ROUTER_HOME/wiki_redirects.json
+{ "notes/alpha.md": "topics/alpha.md" }
+```
+
+A candidate whose page is a redirect source is reported as its target, keeping
+the score it earned, with `"redirected": true` and `redirectedFrom`. A target the
+corpus does not contain is ignored rather than invented. The file is optional,
+`--redirects PATH` overrides its location, and `eval` applies the same map so
+recorded decisions follow the migration.
+
 The fixture committed here is an example over the toy corpus. Real decisions
 belong outside the repository; pass them with `--fixture`. `eval` prints which
 fixture it used, so an example run cannot be mistaken for a real one.

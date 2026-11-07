@@ -9,6 +9,7 @@ from . import CONTRACT, __version__, append as append_ops, evaluate, router, sto
 from .config import ConfigError, load_config
 from .corpus import discover_wikis
 from .fetch import FetchResult, fetch
+from .redirects import REDIRECTS_FILE, load_redirects
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -49,6 +50,7 @@ def build_parser() -> argparse.ArgumentParser:
     route.add_argument("--context", default="")
     route.add_argument("--title", default="")
     route.add_argument("--description", default="")
+    route.add_argument("--redirects", type=Path, default=None)
     route.add_argument(
         "--no-fetch",
         action="store_true",
@@ -64,6 +66,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     evaluate_parser.add_argument("--fixture", type=Path, default=None)
     evaluate_parser.add_argument("--top", type=int, default=5)
+    evaluate_parser.add_argument("--redirects", type=Path, default=None)
     evaluate_parser.add_argument(
         "--json", action="store_true", dest="as_json", help="print JSON"
     )
@@ -98,7 +101,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "route":
         return _run_route(args)
     if args.command == "eval":
-        return _run_eval(args.fixture, args.top, args.as_json)
+        return _run_eval(args.fixture, args.top, args.as_json, args.redirects)
     if args.command == "append":
         return _run_append(args)
 
@@ -173,7 +176,20 @@ def _build_report(payload: store.IndexPayload, stale: bool) -> dict:
     }
 
 
-def _run_eval(fixture: Path | None, top: int, as_json: bool) -> int:
+def _load_redirects(path: Path) -> dict[str, str] | None:
+    try:
+        return load_redirects(path)
+    except (ValueError, OSError) as error:
+        print(f"wiki-router: {error}", file=sys.stderr)
+        return None
+
+
+def _run_eval(
+    fixture: Path | None,
+    top: int,
+    as_json: bool,
+    redirects: Path | None = None,
+) -> int:
     try:
         config = load_config()
     except ConfigError as error:
@@ -197,7 +213,13 @@ def _run_eval(fixture: Path | None, top: int, as_json: bool) -> int:
         print(f"wiki-router: {error}", file=sys.stderr)
         return 1
 
-    payload = evaluate.evaluate(index.documents, cases, top=top)
+    mapping = _load_redirects(
+        redirects if redirects is not None else config.state / REDIRECTS_FILE
+    )
+    if mapping is None:
+        return 2
+
+    payload = evaluate.evaluate(index.documents, cases, top=top, redirects=mapping)
     payload["fixture"] = str(path)
 
     if as_json:
@@ -253,6 +275,12 @@ def _run_route(args: argparse.Namespace) -> int:
     if overrides:
         fetched = replace(fetched, **overrides)
 
+    mapping = _load_redirects(
+        args.redirects if args.redirects is not None else config.state / REDIRECTS_FILE
+    )
+    if mapping is None:
+        return 2
+
     payload = router.route_payload(
         index.documents,
         args.url,
@@ -261,6 +289,7 @@ def _run_route(args: argparse.Namespace) -> int:
         top=args.top,
         wiki=args.wiki,
         exclude_wiki=args.exclude_wiki,
+        redirects=mapping,
     )
 
     if args.as_json:

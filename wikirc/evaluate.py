@@ -11,7 +11,7 @@ the repository and are passed with ``--fixture``.
 """
 
 import json
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -56,7 +56,10 @@ def load_cases(path: Path) -> list[Case]:
 
 
 def evaluate(
-    documents: Sequence[Document], cases: Sequence[Case], top: int = 5
+    documents: Sequence[Document],
+    cases: Sequence[Case],
+    top: int = 5,
+    redirects: Mapping[str, str] = {},
 ) -> dict:
     results = []
     hit_at_1 = 0
@@ -73,6 +76,12 @@ def evaluate(
             ),
             top=top,
         )
+        if redirects:
+            from .redirects import apply_redirects, page_key
+
+            by_key = {page_key(d.wiki, d.id): d for d in documents}
+            candidates = apply_redirects(candidates, redirects, by_key)[:top]
+
         position = 0
         for offset, candidate in enumerate(candidates, start=1):
             if candidate.score > 0 and _acceptable(candidate, case.acceptable):
