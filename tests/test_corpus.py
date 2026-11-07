@@ -2,7 +2,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from wikirc.corpus import Page, Wiki, discover_wikis
+from wikirc.corpus import Page, Wiki, discover_wikis, strip_urls
+from wikirc.store import document_from_page
 
 FIXTURES = Path(__file__).parent / "fixtures" / "corpus"
 POD_BASE = "https://pod.example.com/pod/notes"
@@ -286,3 +287,31 @@ def _garden_with_pod_base() -> Wiki:
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class StripUrlTests(unittest.TestCase):
+    def test_anchor_text_is_kept_and_the_target_dropped(self):
+        text = "- [Causal layered analysis](https://en.wikipedia.org/wiki/Causal_layered_analysis)\n"
+        cleaned = strip_urls(text)
+        self.assertIn("Causal layered analysis", cleaned)
+        self.assertNotIn("wikipedia.org", cleaned)
+
+    def test_bare_urls_are_dropped(self):
+        cleaned = strip_urls("See https://doi.org/10.1108/14636680310698379 for details")
+        self.assertIn("See", cleaned)
+        self.assertIn("for details", cleaned)
+        self.assertNotIn("doi.org", cleaned)
+
+
+class PageTermTests(unittest.TestCase):
+    def test_url_fragments_are_not_indexed(self):
+        page = Page(
+            id="a.md", wiki="w", label="Alpha", subject=None,
+            local=Path("/tmp/a.md"), headings=(),
+            links=("https://doi.org/10.1234/x",),
+            text="# Alpha\n\n- [Beta gamma](https://example.com/beta-gamma)\n",
+        )
+        document = document_from_page(page)
+        self.assertIn("beta", document.terms)
+        for noise in ("http", "https", "doi", "org", "1234"):
+            self.assertNotIn(noise, document.terms)

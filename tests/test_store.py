@@ -126,7 +126,7 @@ class BuildTests(unittest.TestCase):
     def test_payload_metadata(self):
         payload = store.build(FIXTURES, None)
 
-        self.assertEqual(payload.version, 2)
+        self.assertEqual(payload.version, 3)
         parsed = datetime.fromisoformat(payload.generated)
         self.assertIsNotNone(parsed.tzinfo)
         self.assertEqual(len(payload.fingerprint), 64)

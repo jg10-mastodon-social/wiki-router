@@ -9,11 +9,11 @@ from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .corpus import Page, discover_wikis
+from .corpus import Page, discover_wikis, strip_urls
 from .score import Document, document_norm, host_of, idf_of, normalise_url
 from .text import tokenize
 
-INDEX_VERSION = 2
+INDEX_VERSION = 3
 INDEX_NAME = "index.json"
 SUMMARY_LIMIT = 160
 
@@ -44,7 +44,7 @@ def document_from_page(page: Page) -> Document:
         wiki=page.wiki,
         label=page.label,
         subject=page.subject,
-        terms=tokenize(" ".join([page.label, *page.headings, page.text])),
+        terms=tokenize(" ".join([page.label, *page.headings, strip_urls(page.text)])),
         headings=page.headings,
         links=page.links,
         text=page.text,

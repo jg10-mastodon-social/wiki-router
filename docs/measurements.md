@@ -85,6 +85,15 @@ Reverted. Recorded so it is not retried blind: the idea is sound for link
 collectors and wrong for citation-heavy pages, and the two are indistinguishable
 by host alone.
 
+## 2026-11-07 — anchor text instead of link targets
+
+Page terms were built from raw markdown, so every citation contributed `http`,
+`https`, `doi`, `org` and the numeric parts of its URL. On a link-list page those
+fragments dominated the document vector and crowded out its subject.
+
+Indexing anchor text and dropping link targets, with no other change: hit@1 11/17
+-> 12/17 on the unfiled corpus. INDEX_VERSION is 3.
+
 ## 2026-11-07 — redirects (kept)
 
 Content migrating between pages leaves the old page holding enough of the

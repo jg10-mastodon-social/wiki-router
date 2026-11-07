@@ -10,8 +10,20 @@ MAX_TEXT = 20000
 MAX_BYTES = 200000
 
 _HEADING = re.compile(r"^(#{1,6})\s+(.+?)\s*$")
+_LINK_TARGET = re.compile(r"\[([^\]]*)\]\([^)]*\)")
+_URL_TOKEN = re.compile(r"https?://\S+")
 _MD_LINK = re.compile(r"\[[^\]]*\]\(([^)\s]+)\)")
 _BARE_URL = re.compile(r"https?://[^\s<>()\[\]]+")
+
+
+def strip_urls(text: str) -> str:
+    """Keep anchor text, drop link targets and bare URLs.
+
+    A page's own vector should describe what it says, not repeat scheme and host
+    fragments for every citation: those terms inflate a link list's weight and
+    crowd out the subject it is actually about.
+    """
+    return _URL_TOKEN.sub(" ", _LINK_TARGET.sub(r"\1", text))
 
 
 @dataclass(frozen=True)
