@@ -197,11 +197,12 @@ class EvaluateTests(unittest.TestCase):
 
         self.assertEqual(
             list(payload),
-            ["pages", "total", "top", "hit_at_1", "hit_at_top", "cases"],
+            ["pages", "total", "top", "hit_at_1", "hit_at_top",
+             "unmet_capabilities", "unclassified_misses", "cases"],
         )
         self.assertEqual(
             list(payload["cases"][0]),
-            ["url", "expected", "rank", "top", "note"],
+            ["url", "expected", "rank", "top", "note", "capability", "outcome"],
         )
         self.assertEqual(payload["pages"], 3)
         self.assertEqual(payload["total"], 1)
@@ -222,6 +223,53 @@ class CommittedFixtureTests(unittest.TestCase):
         self.assertEqual(
             [case["rank"] for case in result["cases"]], [1, 1, 1, 1, 1]
         )
+
+
+if __name__ == "__main__":
+    unittest.main()
+
+
+class CapabilityTests(unittest.TestCase):
+    def _case(self, url, acceptable, capability="", title=""):
+        return Case(url=url, title=title, acceptable=(acceptable,), capability=capability)
+
+    def test_load_parses_the_capability_statement(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "eval.json"
+            path.write_text(json.dumps({"cases": [{
+                "url": "https://example.com/a/",
+                "acceptable": ["w/a.md"],
+                "capability": "routing a DOI to the consolidated topic page",
+            }]}), encoding="utf-8")
+            self.assertEqual(
+                load_cases(path)[0].capability,
+                "routing a DOI to the consolidated topic page",
+            )
+
+    def test_a_failure_is_attributed_to_the_capability_it_covers(self):
+        result = evaluate(documents(), [self._case(
+            "https://example.com/zeta/", "w/a.md",
+            capability="routing a DOI to the consolidated topic page")], top=3)
+        self.assertEqual(result["cases"][0]["outcome"], "unmet")
+        self.assertEqual(
+            result["unmet_capabilities"],
+            {"routing a DOI to the consolidated topic page": 1},
+        )
+        self.assertEqual(result["unclassified_misses"], 0)
+
+    def test_a_failure_without_a_capability_is_unclassified(self):
+        result = evaluate(documents(), [self._case("https://example.com/zeta/", "w/a.md")], top=3)
+        self.assertEqual(result["cases"][0]["outcome"], "unclassified")
+        self.assertEqual(result["unmet_capabilities"], {})
+        self.assertEqual(result["unclassified_misses"], 1)
+
+    def test_a_passing_case_reports_the_capability_as_met(self):
+        result = evaluate(documents(), [self._case(
+            "https://example.com/alpha/", "w/a.md",
+            capability="routing a DOI to the consolidated topic page",
+            title="alpha")], top=3)
+        self.assertEqual(result["cases"][0]["outcome"], "hit")
+        self.assertEqual(result["unmet_capabilities"], {})
 
 
 if __name__ == "__main__":

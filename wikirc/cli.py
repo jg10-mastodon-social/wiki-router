@@ -236,9 +236,26 @@ def _print_eval(payload: dict) -> None:
         rank = result["rank"]
         marker = f"ok   #{rank}   " if rank else "MISS —    "
         print(f"{marker}{result['url']}")
-        print(f"     want {', '.join(result['expected'])}")
-        if not rank:
-            print(f"     got  {', '.join(result['top']) or '-'}")
+        if not rank and result["capability"]:
+            print(f"     covers: {result['capability']}")
+        else:
+            print(f"     want {', '.join(result['expected'])}")
+            if not rank:
+                print(f"     got  {', '.join(result['top']) or '-'}")
+
+    if payload["unmet_capabilities"]:
+        print()
+        print("capabilities the fixture covers that are not met:")
+        for capability, count in sorted(
+            payload["unmet_capabilities"].items(), key=lambda kv: (-kv[1], kv[0])
+        ):
+            noun = "case" if count == 1 else "cases"
+            print(f"  {count:>2} {noun:<5}  {capability}")
+
+    if payload["unclassified_misses"]:
+        print()
+        print(f"{payload['unclassified_misses']} unclassified miss(es): no stated capability")
+
     print()
     print(
         f"hit@1 {payload['hit_at_1']}/{payload['total']}"

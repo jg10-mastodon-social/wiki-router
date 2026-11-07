@@ -116,6 +116,20 @@ the top N, so a regression fails a command rather than needing inspection.
 of them lands in the top N. Entries may be wiki-relative (`watering.md`) or
 wiki-qualified (`garden/watering.md`).
 
+A case may name the capability it exists to cover:
+
+```json
+{ "url": "…", "title": "…", "acceptable": ["garden/watering.md"],
+  "capability": "routing a DOI to the consolidated topic page" }
+```
+
+That is a statement of intent, not a diagnosis, so it stays true however the case
+fails. `eval` groups failing cases under those statements and prints the
+capabilities the fixture covers that are not met, which is a description of what
+the router cannot do yet rather than a list of runners-up. A failure with no
+statement is counted separately as unclassified, and any failure still exits
+non-zero: the statement explains a failure, it does not excuse it.
+
 ### Redirected pages
 
 When content moves between pages, the old page keeps enough of the original

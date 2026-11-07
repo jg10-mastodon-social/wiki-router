@@ -30,6 +30,7 @@ class Case:
     description: str = ""
     context: str = ""
     note: str = ""
+    capability: str = ""
 
 
 def load_cases(path: Path) -> list[Case]:
@@ -50,6 +51,7 @@ def load_cases(path: Path) -> list[Case]:
                 description=entry.get("description", ""),
                 context=entry.get("context", ""),
                 note=entry.get("note", ""),
+                capability=entry.get("capability", ""),
             )
         )
     return cases
@@ -64,6 +66,8 @@ def evaluate(
     results = []
     hit_at_1 = 0
     hit_at_top = 0
+    unmet: dict[str, int] = {}
+    unclassified = 0
 
     for case in cases:
         candidates = rank(
@@ -93,6 +97,15 @@ def evaluate(
         if position:
             hit_at_top += 1
 
+        if position:
+            outcome = "hit"
+        elif case.capability:
+            outcome = "unmet"
+            unmet[case.capability] = unmet.get(case.capability, 0) + 1
+        else:
+            outcome = "unclassified"
+            unclassified += 1
+
         results.append(
             {
                 "url": case.url,
@@ -100,6 +113,8 @@ def evaluate(
                 "rank": position,
                 "top": [_page_id(candidate) for candidate in candidates],
                 "note": case.note,
+                "capability": case.capability,
+                "outcome": outcome,
             }
         )
 
@@ -109,6 +124,8 @@ def evaluate(
         "top": top,
         "hit_at_1": hit_at_1,
         "hit_at_top": hit_at_top,
+        "unmet_capabilities": unmet,
+        "unclassified_misses": unclassified,
         "cases": results,
     }
 

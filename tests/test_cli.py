@@ -901,3 +901,64 @@ class UsageTests(unittest.TestCase):
             with self.assertRaises(SystemExit) as caught:
                 main([])
         self.assertEqual(caught.exception.code, 2)
+
+
+class CapabilityCliTests(unittest.TestCase):
+    def _run(self, args, notes, state):
+        environ = {
+            "WIKI_ROUTER_NOTES": str(notes),
+            "WIKI_ROUTER_HOME": str(state),
+        }
+        out = io.StringIO()
+        err = io.StringIO()
+        with mock.patch.dict(os.environ, environ, clear=True):
+            with redirect_stdout(out), redirect_stderr(err):
+                code = main(args)
+        return code, out.getvalue(), err.getvalue()
+
+    def _fixture(self, directory, cases):
+        path = Path(directory) / "eval.json"
+        path.write_text(json.dumps({"cases": cases}), encoding="utf-8")
+        return path
+
+    def test_a_failing_capability_is_reported_and_still_fails(self):
+        with tempfile.TemporaryDirectory() as state, tempfile.TemporaryDirectory() as tmp:
+            self._run(["build"], FIXTURES, state)
+            fixture = self._fixture(tmp, [
+                {"url": "https://example.com/watering/", "title": "Watering",
+                 "acceptable": ["garden/watering.md"]},
+                {"url": "https://example.com/nothing/", "title": "Nothing",
+                 "acceptable": ["garden/absent.md"],
+                 "capability": "routing a page that does not exist yet"},
+            ])
+            code, out, _ = self._run(["eval", "--fixture", str(fixture)], FIXTURES, state)
+
+        self.assertEqual(code, 1)
+        self.assertIn("capabilities the fixture covers that are not met:", out)
+        self.assertIn("routing a page that does not exist yet", out)
+        self.assertIn("covers: routing a page that does not exist yet", out)
+
+    def test_an_unclassified_miss_is_called_out(self):
+        with tempfile.TemporaryDirectory() as state, tempfile.TemporaryDirectory() as tmp:
+            self._run(["build"], FIXTURES, state)
+            fixture = self._fixture(tmp, [
+                {"url": "https://example.com/nothing/", "title": "Nothing",
+                 "acceptable": ["garden/absent.md"]},
+            ])
+            code, out, _ = self._run(["eval", "--fixture", str(fixture)], FIXTURES, state)
+
+        self.assertEqual(code, 1)
+        self.assertIn("1 unclassified miss(es)", out)
+
+    def test_a_met_capability_is_not_reported_as_unmet(self):
+        with tempfile.TemporaryDirectory() as state, tempfile.TemporaryDirectory() as tmp:
+            self._run(["build"], FIXTURES, state)
+            fixture = self._fixture(tmp, [
+                {"url": "https://example.com/watering/", "title": "Watering",
+                 "acceptable": ["garden/watering.md"],
+                 "capability": "routing an exact label"},
+            ])
+            code, out, _ = self._run(["eval", "--fixture", str(fixture)], FIXTURES, state)
+
+        self.assertEqual(code, 0)
+        self.assertNotIn("are not met", out)
