@@ -46,3 +46,15 @@ live URLs exposed failures:
 
 This is the measured case for adding metadata resolution before any further
 ranking work.
+
+## 2026-11-07 — both resolved
+
+Re-measured after metadata resolution landed, same inputs:
+
+| Input | Before | After |
+|---|---|---|
+| DOI URL | `reliability: low`, title from the slug, publisher `HTTP 403` | `reliability: ok`, `source: crossref`, real title, author and year |
+| archive.org book page | page-chrome title, top candidate was the wrong page | `source: openlibrary`, clean title, author and ISBN, top candidate is the recorded page |
+
+Both are covered by offline eval fixtures, so a regression fails a test rather
+than needing a live check.
