@@ -7,11 +7,10 @@ carries the title, first author and year the router wants.
 
 import html
 import re
-from typing import TYPE_CHECKING
 from urllib.parse import unquote
 
-if TYPE_CHECKING:
-    from .fetch import FetchResult
+from .http import MAX_FETCH_BYTES
+from .result import FetchResult
 
 DOI_URL = re.compile(
     r"^https?://(?:dx\.)?doi\.org/(10\.\d{4,9}/[^\s?#]+)", re.IGNORECASE
@@ -46,8 +45,6 @@ def compose_title(title: str, subtitle: str = "") -> str:
 
 def resolve_doi(doi: str, *, timeout: int, json_getter) -> "FetchResult":
     """Build a ``FetchResult`` from the Crossref record for ``doi``."""
-    from .fetch import MAX_FETCH_BYTES, FetchResult
-
     doi_url = f"https://doi.org/{doi}"
     api_url = f"https://api.crossref.org/works/{doi}"
 

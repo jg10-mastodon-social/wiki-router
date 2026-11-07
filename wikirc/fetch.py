@@ -1,19 +1,15 @@
 """Fetch a URL and extract its metadata."""
 
 import html as html_module
-import json
 import urllib.error
-import urllib.request
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from html.parser import HTMLParser
 from urllib.parse import unquote, urljoin, urlsplit
 
 from .books import archive_identifier, resolve_archive
+from .http import FETCH_TIMEOUT, MAX_FETCH_BYTES, USER_AGENT, http_get, json_get
 from .metadata import doi_from_url, resolve_doi
-
-FETCH_TIMEOUT = 15
-MAX_FETCH_BYTES = 600_000
-USER_AGENT = "Mozilla/5.0 (compatible; wiki-router/1.0)"
+from .result import FetchResult
 
 SUPPORTED_TYPES = ("text/html", "application/xhtml+xml")
 TITLE_SEPARATORS = (" | ", " - ", " — ")
@@ -26,53 +22,6 @@ NOISY_PHRASES = (
 )
 MAX_TITLE = 120
 MAX_SUFFIX = 20
-
-
-@dataclass(frozen=True)
-class FetchResult:
-    ok: bool
-    final_url: str
-    title: str
-    description: str
-    source: str
-    creator: str
-    date: str
-    isbn: str
-    canonical: str
-    title_noisy: bool
-    error: str
-
-    @classmethod
-    def disabled(cls, url: str, title: str = "") -> "FetchResult":
-        return cls(
-            ok=False,
-            final_url=url,
-            title=title,
-            description="",
-            source="",
-            creator="",
-            date="",
-            isbn="",
-            canonical="",
-            title_noisy=False,
-            error="fetch disabled",
-        )
-
-    @classmethod
-    def failed(cls, url: str, error: str) -> "FetchResult":
-        return cls(
-            ok=False,
-            final_url=url,
-            title="",
-            description="",
-            source="",
-            creator="",
-            date="",
-            isbn="",
-            canonical="",
-            title_noisy=False,
-            error=error,
-        )
 
 
 class _MetaParser(HTMLParser):
@@ -105,36 +54,6 @@ class _MetaParser(HTMLParser):
     def handle_data(self, data):
         if self._in_title:
             self.title_parts.append(data)
-
-
-def http_get(url: str, timeout: int, limit: int) -> tuple[str, str, bytes]:
-    request = urllib.request.Request(
-        url,
-        headers={
-            "User-Agent": USER_AGENT,
-            "Accept": "text/html",
-            "Accept-Encoding": "identity",
-        },
-    )
-    with urllib.request.urlopen(request, timeout=timeout) as response:
-        body = response.read(limit)
-        final_url = response.geturl()
-        content_type = response.headers.get("Content-Type", "")
-    return final_url, content_type, body
-
-
-def json_get(url: str, timeout: int, limit: int):
-    request = urllib.request.Request(
-        url,
-        headers={
-            "User-Agent": USER_AGENT,
-            "Accept": "application/json",
-            "Accept-Encoding": "identity",
-        },
-    )
-    with urllib.request.urlopen(request, timeout=timeout) as response:
-        body = response.read(limit)
-    return json.loads(body.decode("utf-8"))
 
 
 def extract(html: str, base_url: str) -> dict:

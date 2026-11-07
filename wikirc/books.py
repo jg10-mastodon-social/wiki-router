@@ -7,12 +7,10 @@ record, and its ISBN page is then the canonical URL.
 """
 
 import re
-from typing import TYPE_CHECKING
 
+from .http import MAX_FETCH_BYTES
 from .metadata import compose_title
-
-if TYPE_CHECKING:
-    from .fetch import FetchResult
+from .result import FetchResult
 
 ARCHIVE_DETAILS = re.compile(
     r"^https?://(?:www\.)?archive\.org/details/([^/?#]+)"
@@ -63,8 +61,6 @@ def resolve_archive(
     identifier: str, *, timeout: int, json_getter
 ) -> "FetchResult":
     """Build a ``FetchResult`` from the archive.org item record."""
-    from .fetch import MAX_FETCH_BYTES, FetchResult
-
     url = f"https://archive.org/details/{identifier}"
 
     try:
@@ -185,8 +181,6 @@ def _authors(value) -> str:
 
 
 def _openlibrary_record(isbn: str, timeout: int, json_getter):
-    from .fetch import MAX_FETCH_BYTES
-
     url = (
         "https://openlibrary.org/api/books"
         f"?bibkeys=ISBN:{isbn}&format=json&jscmd=data"
