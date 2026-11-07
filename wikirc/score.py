@@ -1,11 +1,20 @@
 """Rank in-memory wiki documents for a URL."""
 
 import math
+import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from urllib.parse import unquote, urlsplit, urlunsplit
 
 from .text import tokenize
+
+# Path segments that describe a site's structure rather than its subject.
+_GENERIC_SEGMENTS = frozenset(
+    {"wiki", "wikimedia", "index", "home", "default", "view", "watch", "en", "details"}
+)
+_EXTENSION = re.compile(r"\.(html?|php|aspx?|md|txt)$", re.IGNORECASE)
+_SEPARATOR = re.compile(r"[^0-9A-Za-z]+")
+_YEAR = re.compile(r"^(19|20)\d\d$")
 
 
 @dataclass(frozen=True)
@@ -131,9 +140,28 @@ def same_site(left: str, right: str) -> bool:
     return host_of(left) == host_of(right)
 
 
-def _slug_text(url: str) -> str:
+def slug_text(url: str) -> str:
+    """Words from a URL path, without site structure or bare identifiers.
+
+    A Wikipedia URL says "wiki" because it is a wiki, not because the article is
+    about one; a homepage says "index" for the same reason. Neither is evidence,
+    and both outrank real subject words when they appear in a page's label.
+    """
     path = unquote(urlsplit(url).path)
-    return "".join(char if char.isalnum() else " " for char in path)
+    words: list[str] = []
+
+    for segment in path.split("/"):
+        segment = _EXTENSION.sub("", segment)
+        if not segment or segment.casefold() in _GENERIC_SEGMENTS:
+            continue
+        for word in _SEPARATOR.split(segment):
+            if not word:
+                continue
+            if word.isdigit() and not _YEAR.match(word):
+                continue
+            words.append(word.casefold())
+
+    return " ".join(words)
 
 
 BODY_WEIGHT = 0.5
@@ -141,7 +169,7 @@ BODY_WEIGHT = 0.5
 
 def _query_terms(query: Query) -> dict[str, float]:
     text = " ".join(
-        [_slug_text(query.url), query.title, query.description, query.context]
+        [slug_text(query.url), query.title, query.description, query.context]
     )
     counts: dict[str, float] = dict(tokenize(text))
     if query.body:
@@ -214,7 +242,7 @@ def _label_boost(label: str, query: Query, query_set: set[str]) -> dict[str, flo
     if label_tokens:
         normalised = _collapse(label)
         if normalised == _collapse(query.title) or normalised == _collapse(
-            _slug_text(query.url)
+            slug_text(query.url)
         ):
             return {"label_exact": 0.5}
         shared = label_tokens & query_set

@@ -85,6 +85,17 @@ Reverted. Recorded so it is not retried blind: the idea is sound for link
 collectors and wrong for citation-heavy pages, and the two are indistinguishable
 by host alone.
 
+## 2026-11-07 — URL slug noise
+
+A URL path contributed every segment as a query term. A Wikipedia URL therefore
+searched for "wiki", and a homepage searched for "en" and "index" — and pages
+labelled *Index* won on that word alone, four of them in one case's top six.
+
+The slug now keeps only subject words: site-structure segments and bare
+identifiers are dropped, years are kept. Aggregate hit rates did not move (13/17
+and 14/17), but the contamination is gone, so the remaining misses are about
+subject vocabulary rather than URL plumbing.
+
 ## 2026-11-07 — anchor text instead of link targets
 
 Page terms were built from raw markdown, so every citation contributed `http`,

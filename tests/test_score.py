@@ -13,6 +13,7 @@ from wikirc.score import (
     normalise_url,
     rank,
     same_site,
+    slug_text,
 )
 from wikirc.text import tokenize
 
@@ -566,3 +567,21 @@ class BodyQueryTests(unittest.TestCase):
         rows = rank(docs, Query(url="https://example.com/x", title="alpha",
                                 body="delta"), top=3)
         self.assertEqual(rows[0].id, "title.md")
+
+
+class SlugTextTests(unittest.TestCase):
+    def test_generic_path_segments_are_dropped(self):
+        self.assertEqual(slug_text("https://en.wikipedia.org/wiki/Alpha_beta"), "alpha beta")
+        self.assertEqual(slug_text("https://example.org/en/index.html"), "")
+
+    def test_digits_that_are_not_years_are_dropped(self):
+        self.assertEqual(
+            slug_text("https://doi.org/10.1108/14636680310698379"), ""
+        )
+        self.assertEqual(slug_text("https://example.org/report/2026/summary"), "report 2026 summary")
+
+    def test_an_ordinary_path_is_unchanged(self):
+        self.assertEqual(
+            slug_text("https://example.com/canal-solar-power-project/"),
+            "canal solar power project",
+        )
