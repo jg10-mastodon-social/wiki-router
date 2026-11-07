@@ -1,0 +1,6 @@
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+
+<photovoltaics.md> rdfs:label "Photovoltaics" .
+<news-digest.md> rdfs:label "News Digest" .
+<a-costs.md> rdfs:label "Generation Costs" .
+<b-digest.md> rdfs:label "Digest" .

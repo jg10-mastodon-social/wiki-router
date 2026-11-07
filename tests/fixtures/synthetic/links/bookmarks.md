@@ -1,0 +1,3 @@
+# Bookmarks
+
+[[Home Assistant]]

@@ -1,0 +1,53 @@
+{
+  "_comment": "Hypothesis harness, not a regression suite: each case isolates one suspected weakness. Cases may fail by design; they record open questions. Run against tests/fixtures/synthetic.",
+  "cases": [
+    {
+      "url": "https://example.com/tide-tables/",
+      "title": "Tide tables",
+      "acceptable": [
+        "harbour/tide-tables.md"
+      ],
+      "note": "H1 and label carry the topic; the rival repeats it in body text"
+    },
+    {
+      "url": "https://en.wikipedia.org/wiki/Solar_power",
+      "title": "Solar power",
+      "acceptable": [
+        "energy/photovoltaics.md"
+      ],
+      "note": "rival links wikipedia, so same_domain fires on a generic host"
+    },
+    {
+      "url": "https://example.com/home-assistant/",
+      "title": "Home Assistant",
+      "acceptable": [
+        "links/bookmarks.md"
+      ],
+      "note": "topic appears only inside a wikilink"
+    },
+    {
+      "url": "https://example.com/gardening/",
+      "title": "Gardening",
+      "acceptable": [
+        "links/misc.md"
+      ],
+      "note": "topic appears only in a markdown anchor"
+    },
+    {
+      "url": "https://en.wikipedia.org/wiki/Energy",
+      "title": "Falling costs of generation",
+      "acceptable": [
+        "energy/a-costs.md"
+      ],
+      "note": "rival links an unrelated wikipedia article: generic-host same_domain"
+    },
+    {
+      "url": "https://example.com/sand-bars",
+      "title": "Sand bars",
+      "acceptable": [
+        "harbour/a-estuary.md"
+      ],
+      "note": "topic is a heading on one page, repeated in body text on the other"
+    }
+  ]
+}

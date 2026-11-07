@@ -1,0 +1,4 @@
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+
+<bookmarks.md> rdfs:label "Bookmarks" .
+<misc.md> rdfs:label "Misc" .

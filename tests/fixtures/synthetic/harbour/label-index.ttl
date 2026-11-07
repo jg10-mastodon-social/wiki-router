@@ -1,0 +1,6 @@
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+
+<tide-tables.md> rdfs:label "Tide Tables" .
+<almanac.md> rdfs:label "Almanac" .
+<a-estuary.md> rdfs:label "Estuary" .
+<b-repeats.md> rdfs:label "Repetition" .
