@@ -37,6 +37,8 @@ def route_payload(
     top: int = 5,
     wiki: str = "",
     exclude_wiki: str = "",
+    last: Sequence[str] = (),
+    within: float = 0.05,
 ) -> dict:
     selected = [
         document
@@ -54,6 +56,8 @@ def route_payload(
             context=context,
         ),
         top=len(selected),
+        last=last,
+        within=within,
     )
     candidates = [
         candidate for candidate in candidates if candidate.score > 0
@@ -90,6 +94,7 @@ def _candidate(candidate: Candidate) -> dict:
         "suggested_section": candidate.suggested_section,
         "headings": list(candidate.headings),
         "summary": candidate.summary,
+        "tiebreak": candidate.tiebreak,
     }
 
 

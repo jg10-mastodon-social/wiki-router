@@ -2,7 +2,7 @@
 
 import math
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from urllib.parse import unquote, urlsplit, urlunsplit
 
 from .text import tokenize
@@ -47,10 +47,45 @@ class Candidate:
     suggested_section: str | None
     headings: tuple[str, ...]
     summary: str
+    tiebreak: bool = False
+
+
+DEFAULT_WITHIN = 0.05
+
+
+def order_candidates(
+    candidates: Sequence[Candidate],
+    last: Sequence[str] = (),
+    within: float = DEFAULT_WITHIN,
+) -> list[Candidate]:
+    """Prefer another wiki when it is within `within` of a demoted wiki's lead."""
+    demoted = set(last)
+    ordered = sorted(candidates, key=lambda row: (-row.score, row.id))
+    if not demoted or len(ordered) < 2:
+        return ordered
+
+    top = ordered[0]
+    if top.wiki not in demoted:
+        return ordered
+
+    best_other = next((row for row in ordered if row.wiki not in demoted), None)
+    if best_other is None or top.score - best_other.score > within:
+        return ordered
+
+    result = [best_other]
+    for row in ordered:
+        if row is best_other:
+            continue
+        result.append(replace(row, tiebreak=True) if row is top else row)
+    return result
 
 
 def rank(
-    documents: Sequence[Document], query: Query, top: int = 5
+    documents: Sequence[Document],
+    query: Query,
+    top: int = 5,
+    last: Sequence[str] = (),
+    within: float = DEFAULT_WITHIN,
 ) -> list[Candidate]:
     if top <= 0:
         return []
@@ -93,8 +128,7 @@ def rank(
             )
         )
 
-    candidates.sort(key=lambda candidate: (-candidate.score, candidate.id))
-    return candidates[:top]
+    return order_candidates(candidates, last, within)[:top]
 
 
 def normalise_url(url: str) -> str:

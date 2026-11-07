@@ -56,7 +56,11 @@ def load_cases(path: Path) -> list[Case]:
 
 
 def evaluate(
-    documents: Sequence[Document], cases: Sequence[Case], top: int = 5
+    documents: Sequence[Document],
+    cases: Sequence[Case],
+    top: int = 5,
+    last: Sequence[str] = (),
+    within: float = 0.05,
 ) -> dict:
     results = []
     hit_at_1 = 0
@@ -72,6 +76,8 @@ def evaluate(
                 context=case.context,
             ),
             top=top,
+            last=last,
+            within=within,
         )
         position = 0
         for offset, candidate in enumerate(candidates, start=1):

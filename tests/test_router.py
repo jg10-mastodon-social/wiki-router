@@ -42,6 +42,7 @@ CANDIDATE_KEYS = [
     "suggested_section",
     "headings",
     "summary",
+    "tiebreak",
 ]
 
 
@@ -349,6 +350,40 @@ class CandidateTests(unittest.TestCase):
             [candidate["wiki"] for candidate in payload["candidates"]],
             ["cycling"],
         )
+
+
+
+
+class PriorityTests(unittest.TestCase):
+    def _documents(self):
+        terms = tokenize("alpha beta gamma")
+        return [
+            Document(id="alpha.md", wiki="notes", label="Alpha", subject=None,
+                     terms=terms, headings=(), links=(), text="", summary=""),
+            Document(id="alpha.md", wiki="topics", label="Alpha", subject=None,
+                     terms=terms, headings=(), links=(), text="", summary=""),
+        ]
+
+    def _payload(self, last=()):
+        url = "https://example.com/alpha/"
+        return route_payload(
+            self._documents(), url, fetched=FetchResult.disabled(url), last=last
+        )
+
+    def test_identical_scores_prefer_the_wiki_that_is_not_last(self):
+        payload = self._payload(last=("notes",))
+        wikis = [candidate["wiki"] for candidate in payload["candidates"]]
+        self.assertEqual(wikis, ["topics", "notes"])
+
+    def test_without_priority_the_order_is_unchanged(self):
+        payload = self._payload()
+        self.assertEqual(len(payload["candidates"]), 2)
+        self.assertFalse(any(candidate["tiebreak"] for candidate in payload["candidates"]))
+
+    def test_reordered_candidate_is_marked(self):
+        payload = self._payload(last=("notes",))
+        self.assertTrue(payload["candidates"][1]["tiebreak"])
+        self.assertFalse(payload["candidates"][0]["tiebreak"])
 
 
 if __name__ == "__main__":

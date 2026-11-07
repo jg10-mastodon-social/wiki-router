@@ -5,10 +5,13 @@ from collections.abc import Sequence
 from dataclasses import replace
 from pathlib import Path
 
-from . import CONTRACT, __version__, append as append_ops, evaluate, router, store
+from . import CONTRACT, __version__
+from . import append as append_ops
+from . import evaluate, router, store
 from .config import ConfigError, load_config
 from .corpus import discover_wikis
 from .fetch import FetchResult, fetch
+from .priority import PRIORITY_FILE, load_priority
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -56,6 +59,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="describe a fetch that did not happen",
     )
     route.add_argument(
+        "--priority",
+        type=Path,
+        default=None,
+        help="wiki preference file (default: <state>/%s)" % PRIORITY_FILE,
+    )
+    route.add_argument(
         "--json", action="store_true", dest="as_json", help="print JSON"
     )
 
@@ -64,6 +73,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     evaluate_parser.add_argument("--fixture", type=Path, default=None)
     evaluate_parser.add_argument("--top", type=int, default=5)
+    evaluate_parser.add_argument("--priority", type=Path, default=None)
     evaluate_parser.add_argument(
         "--json", action="store_true", dest="as_json", help="print JSON"
     )
@@ -98,7 +108,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "route":
         return _run_route(args)
     if args.command == "eval":
-        return _run_eval(args.fixture, args.top, args.as_json)
+        return _run_eval(args.fixture, args.top, args.as_json, args.priority)
     if args.command == "append":
         return _run_append(args)
 
@@ -173,7 +183,17 @@ def _build_report(payload: store.IndexPayload, stale: bool) -> dict:
     }
 
 
-def _run_eval(fixture: Path | None, top: int, as_json: bool) -> int:
+def _load_policy(path: Path):
+    try:
+        return load_priority(path)
+    except (ValueError, OSError) as error:
+        print(f"wiki-router: {error}", file=sys.stderr)
+        return None
+
+
+def _run_eval(
+    fixture: Path | None, top: int, as_json: bool, priority: Path | None = None
+) -> int:
     try:
         config = load_config()
     except ConfigError as error:
@@ -197,7 +217,13 @@ def _run_eval(fixture: Path | None, top: int, as_json: bool) -> int:
         print(f"wiki-router: {error}", file=sys.stderr)
         return 1
 
-    payload = evaluate.evaluate(index.documents, cases, top=top)
+    policy = _load_policy(priority if priority is not None else config.state / PRIORITY_FILE)
+    if policy is None:
+        return 2
+
+    payload = evaluate.evaluate(
+        index.documents, cases, top=top, last=policy.last, within=policy.within
+    )
     payload["fixture"] = str(path)
 
     if as_json:
@@ -253,6 +279,12 @@ def _run_route(args: argparse.Namespace) -> int:
     if overrides:
         fetched = replace(fetched, **overrides)
 
+    policy = _load_policy(
+        args.priority if args.priority is not None else config.state / PRIORITY_FILE
+    )
+    if policy is None:
+        return 2
+
     payload = router.route_payload(
         index.documents,
         args.url,
@@ -261,6 +293,8 @@ def _run_route(args: argparse.Namespace) -> int:
         top=args.top,
         wiki=args.wiki,
         exclude_wiki=args.exclude_wiki,
+        last=policy.last,
+        within=policy.within,
     )
 
     if args.as_json:

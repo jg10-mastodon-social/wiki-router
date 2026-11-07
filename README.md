@@ -116,6 +116,26 @@ the top N, so a regression fails a command rather than needing inspection.
 of them lands in the top N. Entries may be wiki-relative (`watering.md`) or
 wiki-qualified (`garden/watering.md`).
 
+### Wiki preference
+
+When a corpus is dominated by one collection of short notes, those pages win
+close calls against more deliberate pages elsewhere. A priority file names the
+wikis that lose such ties:
+
+```json
+// $WIKI_ROUTER_HOME/wiki_priority.json
+{ "last": ["notes"], "within": 0.05 }
+```
+
+If the top candidate belongs to a `last` wiki and another wiki has a candidate
+within `within` (default `0.05`) of its score, that candidate takes the top slot
+and the displaced one is marked `"tiebreak": true`. A candidate leading by more
+than the margin is never moved. The file is optional; without it nothing changes,
+and `--priority PATH` overrides its location.
+
+This is a preference, not an accuracy setting: it cannot be validated by a
+fixture whose expected answers never name a demoted wiki.
+
 The fixture committed here is an example over the toy corpus. Real decisions
 belong outside the repository; pass them with `--fixture`. `eval` prints which
 fixture it used, so an example run cannot be mistaken for a real one.
