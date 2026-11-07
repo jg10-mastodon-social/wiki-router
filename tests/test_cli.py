@@ -560,6 +560,335 @@ class EvalCommandTests(unittest.TestCase):
         self.assertIn("WIKI_ROUTER_NOTES", err.getvalue())
 
 
+class AppendCommandTests(unittest.TestCase):
+    def _setup(self, tmp):
+        notes = tmp / "notes"
+        shutil.copytree(FIXTURES, notes)
+        return notes, tmp / "state"
+
+    def _build(self, notes, state, pod_base=None):
+        environ = {
+            "WIKI_ROUTER_NOTES": str(notes),
+            "WIKI_ROUTER_HOME": str(state),
+        }
+        if pod_base is not None:
+            environ["WIKI_ROUTER_POD_BASE"] = pod_base
+        with mock.patch.dict(os.environ, environ, clear=True):
+            with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                code = main(["build"])
+        self.assertEqual(code, 0)
+
+    def _run(self, args, notes, state, fetcher=None, pod_base=None):
+        if fetcher is None:
+
+            def fetcher(url, **kwargs):
+                return fetched(url, title="Watering")
+
+        environ = {
+            "WIKI_ROUTER_NOTES": str(notes),
+            "WIKI_ROUTER_HOME": str(state),
+        }
+        if pod_base is not None:
+            environ["WIKI_ROUTER_POD_BASE"] = pod_base
+        out = io.StringIO()
+        err = io.StringIO()
+        with mock.patch.dict(os.environ, environ, clear=True):
+            with mock.patch(
+                "wikirc.cli.fetch", side_effect=fetcher
+            ) as patched:
+                with redirect_stdout(out), redirect_stderr(err):
+                    code = main(args)
+        return code, out.getvalue(), err.getvalue(), patched
+
+    def test_json_dry_run_reports_not_applied_and_leaves_the_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            notes, state = self._setup(Path(tmp))
+            self._build(notes, state)
+            page = notes / "garden" / "watering.md$.txt"
+            before = page.read_bytes()
+
+            code, out, err, fetcher = self._run(
+                [
+                    "append",
+                    "https://example.com/new-article",
+                    "--page",
+                    "watering.md",
+                    "--json",
+                ],
+                notes,
+                state,
+            )
+            after = page.read_bytes()
+
+        payload = json.loads(out)
+        self.assertEqual(code, 0)
+        self.assertEqual(err, "")
+        self.assertEqual(before, after)
+        self.assertEqual(
+            sorted(payload),
+            [
+                "already_present",
+                "applied",
+                "bullet",
+                "diff",
+                "id",
+                "ok",
+                "page",
+                "section",
+            ],
+        )
+        self.assertTrue(payload["ok"])
+        self.assertFalse(payload["already_present"])
+        self.assertFalse(payload["applied"])
+        self.assertEqual(payload["page"], "garden/watering.md")
+        self.assertEqual(payload["id"], "watering.md")
+        self.assertEqual(
+            payload["bullet"],
+            "- [Watering](https://example.com/new-article)",
+        )
+        self.assertEqual(payload["section"], "Watering")
+        self.assertIn(
+            "+- [Watering](https://example.com/new-article)", payload["diff"]
+        )
+        fetcher.assert_called_once_with("https://example.com/new-article")
+
+    def test_apply_writes_once_and_rerun_reports_already_present(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            notes, state = self._setup(Path(tmp))
+            self._build(notes, state)
+            page = notes / "garden" / "watering.md$.txt"
+            args = [
+                "append",
+                "https://example.com/new-article",
+                "--page",
+                "watering.md",
+                "--json",
+                "--apply",
+            ]
+
+            code, out, err, _ = self._run(args, notes, state)
+            text = page.read_text(encoding="utf-8")
+            code_again, out_again, err_again, _ = self._run(
+                args, notes, state
+            )
+            after = page.read_text(encoding="utf-8")
+
+        first = json.loads(out)
+        second = json.loads(out_again)
+        self.assertEqual(code, 0)
+        self.assertEqual(err, "")
+        self.assertTrue(first["ok"])
+        self.assertTrue(first["applied"])
+        self.assertIn(first["bullet"], text.splitlines())
+        self.assertEqual(text.count(first["bullet"]), 1)
+        self.assertEqual(after, text)
+        self.assertEqual(code_again, 1)
+        self.assertEqual(err_again, "")
+        self.assertFalse(second["ok"])
+        self.assertTrue(second["already_present"])
+        self.assertFalse(second["applied"])
+
+    def test_unknown_page_reports_the_argument(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            notes, state = self._setup(Path(tmp))
+            self._build(notes, state)
+
+            code, out, err, fetcher = self._run(
+                [
+                    "append",
+                    "https://example.com/new-article",
+                    "--page",
+                    "nope.md",
+                    "--json",
+                ],
+                notes,
+                state,
+            )
+
+        self.assertEqual(code, 1)
+        self.assertEqual(out, "")
+        self.assertEqual(err, "page not found: nope.md\n")
+        fetcher.assert_not_called()
+
+    def test_page_resolution_accepts_qualified_id_label_and_subject(self):
+        pod_base = "https://pod.example.com/pod/notes"
+        with tempfile.TemporaryDirectory() as tmp:
+            notes, state = self._setup(Path(tmp))
+            self._build(notes, state, pod_base=pod_base)
+
+            for query in (
+                "garden/watering.md",
+                "Watering",
+                f"{pod_base}/garden/watering.md",
+            ):
+                with self.subTest(query=query):
+                    code, out, err, _ = self._run(
+                        [
+                            "append",
+                            "https://example.com/new-article",
+                            "--page",
+                            query,
+                            "--json",
+                        ],
+                        notes,
+                        state,
+                        pod_base=pod_base,
+                    )
+                    payload = json.loads(out)
+                    self.assertEqual(code, 0)
+                    self.assertEqual(err, "")
+                    self.assertEqual(payload["id"], "watering.md")
+                    self.assertFalse(payload["applied"])
+
+    def test_title_option_wins_and_skips_the_fetcher(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            notes, state = self._setup(Path(tmp))
+            self._build(notes, state)
+
+            code, out, err, fetcher = self._run(
+                [
+                    "append",
+                    "https://example.com/new-article",
+                    "--page",
+                    "watering.md",
+                    "--title",
+                    "Given title",
+                    "--json",
+                ],
+                notes,
+                state,
+            )
+
+        payload = json.loads(out)
+        self.assertEqual(code, 0)
+        self.assertEqual(err, "")
+        self.assertEqual(
+            payload["bullet"],
+            "- [Given title](https://example.com/new-article)",
+        )
+        fetcher.assert_not_called()
+
+    def test_slug_title_is_used_when_the_fetch_has_no_title(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            notes, state = self._setup(Path(tmp))
+            self._build(notes, state)
+
+            code, out, err, _ = self._run(
+                [
+                    "append",
+                    "https://example.com/new-article",
+                    "--page",
+                    "watering.md",
+                    "--json",
+                ],
+                notes,
+                state,
+                fetcher=lambda url, **kwargs: fetched(url),
+            )
+
+        payload = json.loads(out)
+        self.assertEqual(code, 0)
+        self.assertEqual(err, "")
+        self.assertEqual(
+            payload["bullet"],
+            "- [new article](https://example.com/new-article)",
+        )
+
+    def test_note_and_section_options_shape_the_plan(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            notes, state = self._setup(Path(tmp))
+            self._build(notes, state)
+
+            code, out, err, _ = self._run(
+                [
+                    "append",
+                    "https://example.com/new-article",
+                    "--page",
+                    "watering.md",
+                    "--note",
+                    "Read later",
+                    "--section",
+                    "Watering",
+                    "--json",
+                ],
+                notes,
+                state,
+            )
+
+        payload = json.loads(out)
+        self.assertEqual(code, 0)
+        self.assertEqual(err, "")
+        self.assertEqual(payload["section"], "Watering")
+        self.assertEqual(
+            payload["bullet"],
+            "- [Watering](https://example.com/new-article) — Read later",
+        )
+
+    def test_plain_dry_run_prints_bullet_section_and_diff(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            notes, state = self._setup(Path(tmp))
+            self._build(notes, state)
+
+            code, out, err, _ = self._run(
+                [
+                    "append",
+                    "https://example.com/new-article",
+                    "--page",
+                    "watering.md",
+                ],
+                notes,
+                state,
+            )
+
+        self.assertEqual(code, 0)
+        self.assertEqual(err, "")
+        self.assertIn("section: Watering", out)
+        self.assertIn(
+            "bullet: - [Watering](https://example.com/new-article)", out
+        )
+        self.assertIn("--- a/watering.md", out)
+        self.assertIn("+++ b/watering.md", out)
+        self.assertNotIn("applied", out)
+
+    def test_append_without_an_index_reports_one(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            notes, state = self._setup(Path(tmp))
+            code, out, err, _ = self._run(
+                [
+                    "append",
+                    "https://example.com/new-article",
+                    "--page",
+                    "watering.md",
+                    "--json",
+                ],
+                notes,
+                state,
+            )
+
+        self.assertEqual(code, 1)
+        self.assertEqual(out, "")
+        self.assertEqual(err, "routing index missing: run build\n")
+
+    def test_append_without_environment_reports_two(self):
+        out = io.StringIO()
+        err = io.StringIO()
+        with mock.patch.dict(os.environ, {}, clear=True):
+            with redirect_stdout(out), redirect_stderr(err):
+                code = main(
+                    [
+                        "append",
+                        "https://example.com/new-article",
+                        "--page",
+                        "watering.md",
+                        "--json",
+                    ]
+                )
+
+        self.assertEqual(code, 2)
+        self.assertEqual(out.getvalue(), "")
+        self.assertIn("WIKI_ROUTER_NOTES", err.getvalue())
+
+
 class UsageTests(unittest.TestCase):
     def test_unknown_subcommand_exits_two(self):
         with redirect_stderr(io.StringIO()):

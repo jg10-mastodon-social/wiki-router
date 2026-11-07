@@ -5,8 +5,9 @@ from collections.abc import Sequence
 from dataclasses import replace
 from pathlib import Path
 
-from . import CONTRACT, __version__, evaluate, router, store
+from . import CONTRACT, __version__, append as append_ops, evaluate, router, store
 from .config import ConfigError, load_config
+from .corpus import discover_wikis
 from .fetch import FetchResult, fetch
 
 
@@ -67,6 +68,21 @@ def build_parser() -> argparse.ArgumentParser:
         "--json", action="store_true", dest="as_json", help="print JSON"
     )
 
+    append_parser = subparsers.add_parser(
+        "append", help="plan or apply appending a link to a page"
+    )
+    append_parser.add_argument("url")
+    append_parser.add_argument("--page", required=True)
+    append_parser.add_argument("--title", default="")
+    append_parser.add_argument("--note", default="")
+    append_parser.add_argument("--section", default="")
+    append_parser.add_argument(
+        "--apply", action="store_true", dest="apply_changes"
+    )
+    append_parser.add_argument(
+        "--json", action="store_true", dest="as_json", help="print JSON"
+    )
+
     return parser
 
 
@@ -83,6 +99,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _run_route(args)
     if args.command == "eval":
         return _run_eval(args.fixture, args.top, args.as_json)
+    if args.command == "append":
+        return _run_append(args)
 
     raise AssertionError(f"unhandled command: {args.command}")
 
@@ -258,3 +276,95 @@ def _run_route(args: argparse.Namespace) -> int:
             f"{candidate['wiki']}/{candidate['label']} ({candidate['id']})"
         )
     return 0
+
+
+def _run_append(args: argparse.Namespace) -> int:
+    try:
+        config = load_config()
+    except ConfigError as error:
+        print(f"wiki-router: {error}", file=sys.stderr)
+        return 2
+
+    try:
+        index = store.load(config.state)
+    except FileNotFoundError:
+        print("routing index missing: run build", file=sys.stderr)
+        return 1
+
+    document = _resolve_document(index.documents, args.page)
+    page = None
+    if document is not None:
+        page = _find_page(config.notes, config.pod_base, document)
+    if page is None:
+        print(f"page not found: {args.page}", file=sys.stderr)
+        return 1
+
+    title = args.title
+    if not title:
+        fetched = fetch(args.url)
+        title = fetched.title or router._title_from_url(args.url)
+
+    plan = append_ops.plan_append(
+        page, title, args.url, note=args.note, section=args.section
+    )
+
+    applied = False
+    if args.apply_changes and plan.ok:
+        append_ops.apply(plan, page)
+        applied = True
+
+    if args.as_json:
+        print(
+            json.dumps(
+                {
+                    "ok": plan.ok,
+                    "page": f"{plan.wiki}/{plan.page_id}",
+                    "id": plan.page_id,
+                    "bullet": plan.bullet,
+                    "section": plan.section,
+                    "diff": plan.diff,
+                    "already_present": plan.already_present,
+                    "applied": applied,
+                }
+            )
+        )
+        return 0 if plan.ok else 1
+
+    print(f"page: {plan.wiki}/{plan.page_id}")
+    print(f"section: {plan.section}")
+    print(f"bullet: {plan.bullet}")
+    if plan.diff:
+        print(plan.diff, end="")
+    if plan.already_present:
+        print("already present")
+    if applied:
+        print("applied")
+    return 0 if plan.ok else 1
+
+
+def _resolve_document(documents, query: str):
+    for document in documents:
+        if document.id == query:
+            return document
+    for document in documents:
+        if f"{document.wiki}/{document.id}" == query:
+            return document
+
+    lowered = query.casefold()
+    for document in documents:
+        if document.label.casefold() == lowered:
+            return document
+    for document in documents:
+        if document.subject is not None and document.subject == query:
+            return document
+    return None
+
+
+def _find_page(notes, pod_base, document):
+    for wiki in discover_wikis(notes, pod_base):
+        if wiki.name != document.wiki:
+            continue
+        for page in wiki.pages:
+            if page.id == document.id:
+                return page
+    return None
