@@ -70,6 +70,21 @@ collection is a defensible answer alongside the page the fixture names: a query
 about a topic covered in both places ranks the concept note first. Those cases
 say as much about single-page `acceptable` sets as about ranking.
 
+## 2026-11-07 — generic-host guard (reverted)
+
+Hypothesis: a page linking a generic reference host — an encyclopedia, a DOI
+resolver, a code host — says nothing about its own topic, so `same_domain`
+should be suppressed for those hosts.
+
+Measured on the unfiled corpus, no case improved at rank 1. The guard removes the
+boost from the expected page as well as from the rival, and in this corpus the
+pages worth routing to are frequently the ones carrying the citation. Combined
+with the wiki tie-break it cost two cases at a 0.05 margin and one at 0.20.
+
+Reverted. Recorded so it is not retried blind: the idea is sound for link
+collectors and wrong for citation-heavy pages, and the two are indistinguishable
+by host alone.
+
 ## 2026-11-07 — both resolved
 
 Re-measured after metadata resolution landed, same inputs:
