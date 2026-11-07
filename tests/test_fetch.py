@@ -9,6 +9,7 @@ from wikirc.fetch import (
     FetchResult,
     clean_title,
     extract,
+    extract_text,
     fetch,
     http_get,
     json_get,
@@ -395,3 +396,26 @@ class FetchResultTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BodyTextTests(unittest.TestCase):
+    def test_visible_text_only(self):
+        html = (
+            "<html><head><title>Title</title><style>.x{}</style></head>"
+            "<body><script>evil()</script><p>Hello <b>world</b></p></body></html>"
+        )
+        text = extract_text(html)
+        self.assertIn("Hello world", text)
+        for unwanted in ("evil", "Title", ".x{}"):
+            self.assertNotIn(unwanted, text)
+
+    def test_text_is_bounded(self):
+        html = "<body>" + ("word " * 5000) + "</body>"
+        self.assertLessEqual(len(extract_text(html)), 4000)
+
+    def test_fetch_carries_the_body(self):
+        def getter(url, timeout, limit):
+            return url, "text/html; charset=utf-8", b"<html><body><p>Body words</p></body></html>"
+        result = fetch("https://example.com/x", getter=getter)
+        self.assertTrue(result.ok)
+        self.assertIn("Body words", result.text)

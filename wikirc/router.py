@@ -55,6 +55,7 @@ def route_payload(
             title=expand(block["title"], dict(synonyms)),
             description=expand(block["description"], dict(synonyms)),
             context=expand(context, dict(synonyms)),
+            body=fetched.text,
         ),
         top=len(selected),
     )

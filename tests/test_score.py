@@ -544,3 +544,25 @@ class RankingCostTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BodyQueryTests(unittest.TestCase):
+    def _doc(self, page_id, text):
+        return Document(id=page_id, wiki="w", label=page_id, subject=None,
+                        terms=tokenize(text), headings=(), links=(), text="", summary="")
+
+    def test_body_terms_become_query_terms(self):
+        docs = [self._doc("a.md", "futures scenarios methods")]
+        rows = rank(docs, Query(url="https://example.com/x", title="Untitled",
+                                body="causal layered analysis of futures"), top=3)
+        self.assertEqual(rows[0].id, "a.md")
+        self.assertIn("future", rows[0].matched)
+
+    def test_a_title_match_outweighs_a_body_match(self):
+        docs = [
+            self._doc("title.md", "alpha beta gamma"),
+            self._doc("body.md", "delta epsilon zeta"),
+        ]
+        rows = rank(docs, Query(url="https://example.com/x", title="alpha",
+                                body="delta"), top=3)
+        self.assertEqual(rows[0].id, "title.md")

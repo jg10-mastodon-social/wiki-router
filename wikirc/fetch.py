@@ -18,6 +18,8 @@ from .metadata import doi_from_url, resolve_doi
 from .result import FetchResult
 
 SUPPORTED_TYPES = ("text/html", "application/xhtml+xml")
+MAX_BODY_TEXT = 4000
+MIN_BLOCK_CHARS = 40
 TITLE_SEPARATORS = (" | ", " - ", " — ")
 NOISY_PHRASES = (
     "just a moment",
@@ -85,6 +87,67 @@ def extract(html: str, base_url: str) -> dict:
         "description": description,
         "canonical": canonical,
     }
+
+
+class _TextParser(HTMLParser):
+    """Collect visible text as blocks, dropping chrome and markup."""
+
+    SKIP = ("script", "style", "head", "noscript", "nav", "header", "footer", "aside")
+    SKIP_ROLES = ("navigation", "banner", "contentinfo")
+    # Only true text blocks end a run. Container elements (div, section, main)
+    # wrap paragraphs and must not split them, or every nested div produces a
+    # fragment too short to survive the chrome filter.
+    BLOCK = ("p", "li", "h1", "h2", "h3", "h4", "h5", "h6", "br",
+             "blockquote", "pre", "td", "tr", "dt", "dd")
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.blocks: list[str] = []
+        self.buffer: list[str] = []
+        self.stack: list[tuple[str, bool]] = []
+
+    def _flush(self) -> None:
+        text = " ".join(" ".join(self.buffer).split())
+        if text:
+            self.blocks.append(text)
+        self.buffer = []
+
+    def _skipping(self) -> bool:
+        return any(skip for _, skip in self.stack)
+
+    def handle_starttag(self, tag, attrs):
+        role = next((value for name, value in attrs if name == "role"), None)
+        self.stack.append((tag, tag in self.SKIP or role in self.SKIP_ROLES))
+        if tag in self.BLOCK:
+            self._flush()
+
+    def handle_endtag(self, tag):
+        # Pop back to the matching tag; malformed markup means it may be absent.
+        for index in range(len(self.stack) - 1, -1, -1):
+            if self.stack[index][0] == tag:
+                del self.stack[index:]
+                break
+        if tag in self.BLOCK:
+            self._flush()
+
+    def handle_data(self, data):
+        if not self._skipping() and data.strip():
+            self.buffer.append(data)
+
+
+def extract_text(html: str, limit: int = MAX_BODY_TEXT) -> str:
+    """Visible page text, bounded: the content a title alone does not carry.
+
+    Browsing chrome arrives as many short blocks — menu items, link lists — while
+    prose arrives as long ones. Keeping only substantial blocks drops the menu
+    without needing to know the site.
+    """
+    parser = _TextParser()
+    parser.feed(html)
+    parser.close()
+    parser._flush()
+    substantive = [block for block in parser.blocks if len(block) >= MIN_BLOCK_CHARS]
+    return " ".join(substantive or parser.blocks)[:limit]
 
 
 def clean_title(title: str, url: str) -> str:
@@ -164,6 +227,7 @@ def fetch(
         canonical=parsed["canonical"],
         title_noisy=title_is_noisy(title, final_url),
         error="",
+        text=extract_text(page_html),
     )
 
     if result.title_noisy or looks_like_book_url(url):

@@ -16,6 +16,7 @@ class FetchResult:
     canonical: str
     title_noisy: bool
     error: str
+    text: str = ""
 
     @classmethod
     def disabled(cls, url: str, title: str = "") -> "FetchResult":

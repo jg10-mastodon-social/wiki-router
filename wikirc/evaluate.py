@@ -32,6 +32,7 @@ class Case:
     context: str = ""
     note: str = ""
     capability: str = ""
+    body: str = ""
 
 
 def load_cases(path: Path) -> list[Case]:
@@ -53,6 +54,7 @@ def load_cases(path: Path) -> list[Case]:
                 context=entry.get("context", ""),
                 note=entry.get("note", ""),
                 capability=entry.get("capability", ""),
+                body=entry.get("body", ""),
             )
         )
     return cases
@@ -79,6 +81,7 @@ def evaluate(
                 title=expand(case.title, dict(synonyms)),
                 description=expand(case.description, dict(synonyms)),
                 context=expand(case.context, dict(synonyms)),
+                body=case.body,
             ),
             top=top,
         )

@@ -30,6 +30,7 @@ class Query:
     title: str = ""
     description: str = ""
     context: str = ""
+    body: str = ""
 
 
 @dataclass(frozen=True)
@@ -135,11 +136,20 @@ def _slug_text(url: str) -> str:
     return "".join(char if char.isalnum() else " " for char in path)
 
 
-def _query_terms(query: Query) -> dict[str, int]:
+BODY_WEIGHT = 0.5
+
+
+def _query_terms(query: Query) -> dict[str, float]:
     text = " ".join(
         [_slug_text(query.url), query.title, query.description, query.context]
     )
-    return tokenize(text)
+    counts: dict[str, float] = dict(tokenize(text))
+    if query.body:
+        # Page content is evidence of subject, but weaker than what the caller
+        # already knows: a title says what the link is, a body says what it covers.
+        for term, count in tokenize(query.body).items():
+            counts[term] = counts.get(term, 0) + count * BODY_WEIGHT
+    return counts
 
 
 def document_frequencies(documents: Sequence[Document]) -> dict[str, int]:

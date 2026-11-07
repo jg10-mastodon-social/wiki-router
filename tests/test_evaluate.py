@@ -274,3 +274,22 @@ class CapabilityTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CaseBodyTests(unittest.TestCase):
+    def test_load_parses_the_body(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "eval.json"
+            path.write_text(json.dumps({"cases": [{
+                "url": "https://example.com/a/", "acceptable": ["w/a.md"],
+                "body": "the fetched page body",
+            }]}), encoding="utf-8")
+            self.assertEqual(load_cases(path)[0].body, "the fetched page body")
+
+    def test_a_case_body_helps_ranking(self):
+        docs = [Document(id="a.md", wiki="w", label="A", subject=None,
+                         terms=tokenize("futures"), headings=(), links=(), text="", summary="")]
+        case = Case(url="https://example.com/x", title="Untitled",
+                    acceptable=("w/a.md",), body="a study of futures")
+        result = evaluate(docs, [case], top=3)
+        self.assertEqual(result["hit_at_1"], 1)
