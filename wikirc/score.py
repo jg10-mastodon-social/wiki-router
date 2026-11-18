@@ -56,6 +56,7 @@ class Query:
     url: str
     title: str = ""
     description: str = ""
+    headings: str = ""
     context: str = ""
     body: str = ""
 
@@ -88,13 +89,13 @@ def rank(
     if top <= 0:
         return []
 
-    query_terms = _query_terms(query)
+    query_terms = query_term_weights(query)
     if not query_terms:
         return []
 
     idf = idf_of(documents)
     query_weights = {
-        term: count * idf(term) for term, count in query_terms.items()
+        term: weight * idf(term) for term, weight in query_terms.items()
     }
     query_norm = math.sqrt(sum(weight * weight for weight in query_weights.values()))
     query_set = set(query_terms)
@@ -203,20 +204,62 @@ def slug_text(url: str) -> str:
     return " ".join(words)
 
 
-BODY_WEIGHT = 0.5
+# What the caller knows about a link is not equally informative, so the query
+# vector weights each field. A title names the subject; a slug is the same claim
+# in URL form; a description or the caller's own context says why the link is
+# being filed; a heading says what the fetched page is organised around; page
+# content only says what it covers. A token found in several fields sums their
+# weights: a term named by both title and slug therefore outweighs one named
+# once by the title alone.
+QUERY_FIELD_WEIGHTS: dict[str, float] = {
+    "title": 4.0,
+    "slug": 2.5,
+    "description": 2.5,
+    "headings": 2.0,
+    "context": 1.5,
+    "body": 0.7,
+}
 
 
-def _query_terms(query: Query) -> dict[str, float]:
-    text = " ".join(
-        [slug_text(query.url), query.title, query.description, query.context]
+def _term_frequency(count: float) -> float:
+    """Sublinear term frequency, shared by the query and document vectors.
+
+    Repeating a term is more evidence than writing it once, but never twice the
+    evidence: without the log, an echoed phrase in a long description or body
+    outweighs a precise title. Both sides of the cosine use this transform, so
+    the two vectors stay comparable.
+    """
+    return 1 + math.log(count)
+
+
+def query_term_weights(query: Query) -> dict[str, float]:
+    """The query vector's term weights, before idf.
+
+    Each field is tokenised on its own so its tokens carry that field's weight
+    (:data:`QUERY_FIELD_WEIGHTS`); a term's contribution from every field is
+    summed, and its repetition inside a field is made sublinear before the
+    weight is applied. A token appearing once in two fields therefore carries
+    the sum of those two field weights.
+    """
+    fields = (
+        ("slug", slug_text(query.url)),
+        ("title", query.title),
+        ("description", query.description),
+        ("headings", query.headings),
+        ("context", query.context),
+        ("body", query.body),
     )
-    counts: dict[str, float] = dict(tokenize(text))
-    if query.body:
-        # Page content is evidence of subject, but weaker than what the caller
-        # already knows: a title says what the link is, a body says what it covers.
-        for term, count in tokenize(query.body).items():
-            counts[term] = counts.get(term, 0) + count * BODY_WEIGHT
-    return counts
+
+    weights: dict[str, float] = {}
+    for name, text in fields:
+        if not text:
+            continue
+        field_weight = QUERY_FIELD_WEIGHTS[name]
+        for term, count in tokenize(text).items():
+            weights[term] = (
+                weights.get(term, 0.0) + field_weight * _term_frequency(count)
+            )
+    return weights
 
 
 def document_frequencies(documents: Sequence[Document]) -> dict[str, int]:
@@ -244,7 +287,7 @@ def document_norm(terms: Mapping[str, int], idf) -> float:
     total = 0.0
     for term, count in terms.items():
         if count > 0:
-            weight = (1 + math.log(count)) * idf(term)
+            weight = _term_frequency(count) * idf(term)
             total += weight * weight
     return math.sqrt(total)
 
@@ -268,7 +311,7 @@ def _cosine(
     for term, weight in query_weights.items():
         count = document.terms.get(term, 0)
         if count > 0:
-            dot += weight * ((1 + math.log(count)) * idf(term))
+            dot += weight * (_term_frequency(count) * idf(term))
     return dot / (query_norm * norm)
 
 

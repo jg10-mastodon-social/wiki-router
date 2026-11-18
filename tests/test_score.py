@@ -1,9 +1,11 @@
+import math
 import time
 import unittest
 from collections.abc import Sequence
 from dataclasses import replace
 
 from wikirc.score import (
+    QUERY_FIELD_WEIGHTS,
     Document,
     Query,
     document_frequencies,
@@ -11,6 +13,7 @@ from wikirc.score import (
     host_of,
     idf_of,
     normalise_url,
+    query_term_weights,
     rank,
     same_site,
     slug_text,
@@ -873,3 +876,143 @@ class ReferenceHostTests(unittest.TestCase):
         candidate = rank([document], query)[0]
 
         self.assertEqual(candidate.boosts["same_domain"], 0.1)
+
+
+class QueryFieldWeightTests(unittest.TestCase):
+    """What the caller knows about a link is worth what the field says."""
+
+    def test_the_field_weight_table_is_a_single_source_of_truth(self):
+        self.assertEqual(
+            QUERY_FIELD_WEIGHTS,
+            {
+                "title": 4.0,
+                "slug": 2.5,
+                "description": 2.5,
+                "headings": 2.0,
+                "context": 1.5,
+                "body": 0.7,
+            },
+        )
+
+    def test_a_token_in_two_fields_accumulates_their_weights(self):
+        weights = query_term_weights(
+            Query(url="https://example.com/tidal/", title="tidal")
+        )
+
+        self.assertAlmostEqual(
+            weights["tidal"],
+            QUERY_FIELD_WEIGHTS["slug"] + QUERY_FIELD_WEIGHTS["title"],
+        )
+
+    def test_a_title_match_beats_a_context_match_by_at_least_two_to_one(self):
+        # Identical term mass on both sides: two single-occurrence terms each,
+        # all equally rare, so only which field carried the terms can decide.
+        title_match = make_document(
+            id="title",
+            label="Archive",
+            terms=tokenize("tidal turbine", bigrams=False),
+        )
+        context_match = make_document(
+            id="context",
+            label="Archive",
+            terms=tokenize("harbour dredging", bigrams=False),
+        )
+        query = Query(
+            url="https://example.com/report/",
+            title="tidal turbine",
+            context="harbour dredging",
+        )
+
+        candidates = rank([title_match, context_match], query)
+
+        by_id = {candidate.id: candidate for candidate in candidates}
+        self.assertEqual(candidates[0].id, "title")
+        self.assertGreaterEqual(
+            by_id["title"].cosine, 2 * by_id["context"].cosine
+        )
+
+    def test_a_headings_match_outranks_the_same_token_in_the_body(self):
+        document = make_document(
+            id="page",
+            label="Archive",
+            terms=tokenize("harbour turbine", bigrams=False),
+        )
+        in_headings = Query(
+            url="https://example.com/report/",
+            title="harbour",
+            headings="turbine",
+        )
+        in_body = Query(
+            url="https://example.com/report/",
+            title="harbour",
+            body="turbine",
+        )
+
+        heading_candidate = rank([document], in_headings)[0]
+        body_candidate = rank([document], in_body)[0]
+
+        self.assertGreater(heading_candidate.cosine, body_candidate.cosine)
+        self.assertAlmostEqual(
+            query_term_weights(in_headings)["turbine"]
+            / query_term_weights(in_body)["turbine"],
+            QUERY_FIELD_WEIGHTS["headings"] / QUERY_FIELD_WEIGHTS["body"],
+            places=6,
+        )
+
+    def test_four_body_repeats_do_not_outrank_one_title_match(self):
+        title_match = make_document(id="title", terms={"tidal": 1})
+        body_repeats = make_document(id="body", terms={"harbour": 4})
+        query = Query(
+            url="https://example.com/report/",
+            title="tidal",
+            body="harbour harbour harbour harbour",
+        )
+
+        candidates = rank([title_match, body_repeats], query)
+
+        by_id = {candidate.id: candidate for candidate in candidates}
+        self.assertEqual(candidates[0].id, "title")
+        # Four body repeats carry 0.7 * (1 + log 4) = 1.67 against the title's
+        # 4.0, a ratio of 2.4. Raw counts would carry 0.7 * 4 = 2.8, a ratio
+        # of 1.43, and this bound would fail.
+        self.assertGreaterEqual(
+            by_id["title"].cosine, 2 * by_id["body"].cosine
+        )
+        self.assertLess(
+            query_term_weights(query)["harbour"],
+            QUERY_FIELD_WEIGHTS["body"] * 4,
+        )
+        self.assertAlmostEqual(
+            query_term_weights(query)["harbour"],
+            QUERY_FIELD_WEIGHTS["body"] * (1 + math.log(4)),
+        )
+
+    def test_the_shared_transform_is_sublinear_on_the_document_side(self):
+        once = make_document(id="once", terms={"tidal": 1}, norm=1.0)
+        twice = make_document(id="twice", terms={"tidal": 2}, norm=1.0)
+        query = Query(url="https://example.com/report/", title="tidal")
+
+        candidates = rank([once, twice], query)
+
+        by_id = {candidate.id: candidate for candidate in candidates}
+        self.assertGreater(by_id["twice"].cosine, by_id["once"].cosine)
+        self.assertAlmostEqual(
+            by_id["twice"].cosine / by_id["once"].cosine,
+            1 + math.log(2),
+            delta=1e-3,
+        )
+
+    def test_the_same_transform_applies_to_a_repeated_query_token(self):
+        # A repeated title token: cosine normalisation hides the weight, so the
+        # query vector itself is the observable.
+        once = query_term_weights(
+            Query(url="https://example.com/report/", title="tidal")
+        )
+        twice = query_term_weights(
+            Query(url="https://example.com/report/", title="tidal tidal")
+        )
+
+        self.assertGreater(twice["tidal"], once["tidal"])
+        self.assertAlmostEqual(
+            twice["tidal"] / once["tidal"], 1 + math.log(2), places=9
+        )
