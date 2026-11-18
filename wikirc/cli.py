@@ -71,6 +71,12 @@ def build_parser() -> argparse.ArgumentParser:
     evaluate_parser.add_argument("--redirects", type=Path, default=None)
     evaluate_parser.add_argument("--synonyms", type=Path, default=None)
     evaluate_parser.add_argument(
+        "--require-aux",
+        action="store_true",
+        dest="require_aux",
+        help="refuse to score when an aux map is missing",
+    )
+    evaluate_parser.add_argument(
         "--json", action="store_true", dest="as_json", help="print JSON"
     )
 
@@ -105,7 +111,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _run_route(args)
     if args.command == "eval":
         return _run_eval(
-            args.fixture, args.top, args.as_json, args.redirects, args.synonyms
+            args.fixture,
+            args.top,
+            args.as_json,
+            args.redirects,
+            args.synonyms,
+            args.require_aux,
         )
     if args.command == "append":
         return _run_append(args)
@@ -181,6 +192,11 @@ def _build_report(payload: store.IndexPayload, stale: bool) -> dict:
     }
 
 
+def _aux_status(path: Path) -> str:
+    """Say whether an optional aux map was found where it was looked for."""
+    return "loaded" if Path(path).is_file() else "missing"
+
+
 def _load_redirects(path: Path) -> dict[str, str] | None:
     try:
         return load_redirects(path)
@@ -203,12 +219,24 @@ def _run_eval(
     as_json: bool,
     redirects: Path | None = None,
     synonyms_path: Path | None = None,
+    require_aux: bool = False,
 ) -> int:
     try:
         config = load_config()
     except ConfigError as error:
         print(f"wiki-router: {error}", file=sys.stderr)
         return 2
+
+    redirects_path = (
+        redirects if redirects is not None else config.state / REDIRECTS_FILE
+    )
+    synonyms_file = (
+        synonyms_path if synonyms_path is not None else config.state / SYNONYMS_FILE
+    )
+    aux = {
+        "synonyms": _aux_status(synonyms_file),
+        "redirects": _aux_status(redirects_path),
+    }
 
     path = Path(fixture) if fixture is not None else evaluate.DEFAULT_FIXTURE
     if not path.is_file():
@@ -227,15 +255,27 @@ def _run_eval(
         print(f"wiki-router: {error}", file=sys.stderr)
         return 1
 
-    mapping = _load_redirects(
-        redirects if redirects is not None else config.state / REDIRECTS_FILE
-    )
+    if require_aux:
+        missing = [
+            Path(file).name
+            for name, file in (
+                ("synonyms", synonyms_file),
+                ("redirects", redirects_path),
+            )
+            if aux[name] == "missing"
+        ]
+        if missing:
+            print(
+                f"wiki-router: --require-aux: missing {', '.join(missing)}",
+                file=sys.stderr,
+            )
+            return 2
+
+    mapping = _load_redirects(redirects_path)
     if mapping is None:
         return 2
 
-    synonyms = _load_synonyms(
-        synonyms_path if synonyms_path is not None else config.state / SYNONYMS_FILE
-    )
+    synonyms = _load_synonyms(synonyms_file)
     if synonyms is None:
         return 2
 
@@ -243,6 +283,7 @@ def _run_eval(
         index.documents, cases, top=top, redirects=mapping, synonyms=synonyms
     )
     payload["fixture"] = str(path)
+    payload["aux"] = aux
 
     if as_json:
         print(json.dumps(payload))
@@ -279,6 +320,12 @@ def _print_eval(payload: dict) -> None:
         print(f"{payload['unclassified_misses']} unclassified miss(es): no stated capability")
 
     print()
+    print(
+        "aux: "
+        + " · ".join(
+            f"{name} {status}" for name, status in payload["aux"].items()
+        )
+    )
     print(
         f"hit@1 {payload['hit_at_1']}/{payload['total']}"
         f" · hit@{payload['top']} {payload['hit_at_top']}/{payload['total']}"
