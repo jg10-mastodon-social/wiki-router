@@ -585,3 +585,73 @@ class SlugTextTests(unittest.TestCase):
             slug_text("https://example.com/canal-solar-power-project/"),
             "canal solar power project",
         )
+
+
+class ReferenceHostTests(unittest.TestCase):
+    def _pair(self, linked_id, link):
+        terms = tokenize("solar water", bigrams=False)
+        return [
+            make_document(id="plain", terms=terms),
+            make_document(id=linked_id, terms=terms, links=(link,)),
+        ]
+
+    def test_a_reference_host_link_earns_no_same_domain_boost(self):
+        documents = self._pair(
+            "wikipedia-linker", "https://en.wikipedia.org/wiki/other"
+        )
+        query = Query(url="https://en.wikipedia.org/wiki/solar", title="solar")
+
+        candidates = rank(documents, query)
+
+        by_id = {candidate.id: candidate for candidate in candidates}
+        self.assertEqual(candidates[0].id, "plain")
+        self.assertNotIn("same_domain", by_id["wikipedia-linker"].boosts)
+        self.assertEqual(
+            by_id["wikipedia-linker"].score, by_id["plain"].score
+        )
+
+    def test_an_ordinary_host_link_still_earns_the_same_domain_boost(self):
+        documents = self._pair(
+            "site-linker", "https://blog.example.org/other"
+        )
+        query = Query(url="https://blog.example.org/solar", title="solar")
+
+        candidates = rank(documents, query)
+
+        by_id = {candidate.id: candidate for candidate in candidates}
+        self.assertEqual(candidates[0].id, "site-linker")
+        self.assertEqual(by_id["site-linker"].boosts["same_domain"], 0.1)
+        self.assertNotIn("same_domain", by_id["plain"].boosts)
+
+    def test_reference_hosts_match_by_suffix_not_equality(self):
+        cases = (
+            ("en.wikipedia.org", "https://en.wikipedia.org/wiki/other"),
+            ("de.wikipedia.org", "https://de.wikipedia.org/wiki/other"),
+            ("en.wikipedia.org", "https://de.wikipedia.org/wiki/other"),
+        )
+        for query_host, link in cases:
+            with self.subTest(query_host=query_host, link=link):
+                document = make_document(
+                    terms={"solar": 1}, links=(link,)
+                )
+                query = Query(
+                    url=f"https://{query_host}/wiki/solar", title="solar"
+                )
+
+                candidate = rank([document], query)[0]
+
+                self.assertNotIn("same_domain", candidate.boosts)
+
+    def test_an_ordinary_link_boosts_a_page_that_also_links_a_reference(self):
+        document = make_document(
+            terms={"solar": 1},
+            links=(
+                "https://en.wikipedia.org/wiki/other",
+                "https://blog.example.org/other",
+            ),
+        )
+        query = Query(url="https://blog.example.org/solar", title="solar")
+
+        candidate = rank([document], query)[0]
+
+        self.assertEqual(candidate.boosts["same_domain"], 0.1)

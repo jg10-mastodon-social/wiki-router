@@ -16,6 +16,19 @@ _EXTENSION = re.compile(r"\.(html?|php|aspx?|md|txt)$", re.IGNORECASE)
 _SEPARATOR = re.compile(r"[^0-9A-Za-z]+")
 _YEAR = re.compile(r"^(19|20)\d\d$")
 
+# Hosts that nearly every page links to, so one of these among a page's links
+# says nothing about the page's subject. Matched by hostname suffix.
+REFERENCE_HOSTS = (
+    "wikipedia.org",
+    "wikimedia.org",
+    "wikidata.org",
+    "doi.org",
+    "archive.org",
+    "openlibrary.org",
+    "youtube.com",
+    "youtu.be",
+)
+
 
 @dataclass(frozen=True)
 class Document:
@@ -290,6 +303,12 @@ def _sites_of(links: Sequence[str]) -> set[str]:
     return {host_of(link) for link in links}
 
 
+def _is_reference_host(host: str) -> bool:
+    return any(
+        host == name or host.endswith("." + name) for name in REFERENCE_HOSTS
+    )
+
+
 def _keys_of(links: Sequence[str]) -> set[str]:
     return {normalise_url(link) for link in links}
 
@@ -297,6 +316,9 @@ def _keys_of(links: Sequence[str]) -> set[str]:
 def _shares_other_site(
     document: Document, host: str, normalised_url: str
 ) -> bool:
+    if _is_reference_host(host):
+        return False
+
     sites = document.sites or _sites_of(document.links)
     if host not in sites:
         return False
