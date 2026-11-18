@@ -25,6 +25,16 @@ class ParserTests(unittest.TestCase):
     def test_program_name(self):
         self.assertEqual(build_parser().prog, "wiki-router")
 
+    def test_respect_existing_links_is_opt_in(self):
+        self.assertFalse(
+            build_parser().parse_args(["eval"]).respect_existing_links
+        )
+        self.assertTrue(
+            build_parser()
+            .parse_args(["eval", "--respect-existing-links"])
+            .respect_existing_links
+        )
+
 
 class VersionCommandTests(unittest.TestCase):
     def test_version_json(self):
@@ -1010,3 +1020,90 @@ class SynonymsCliTests(unittest.TestCase):
             )
         self.assertEqual(code, 2)
         self.assertIn("synonyms must map phrases to phrases", err)
+
+
+class ExistingLinkCliTests(unittest.TestCase):
+    def _run(self, args, notes, state):
+        environ = {
+            "WIKI_ROUTER_NOTES": str(notes),
+            "WIKI_ROUTER_HOME": str(state),
+        }
+        out = io.StringIO()
+        err = io.StringIO()
+        with mock.patch.dict(os.environ, environ, clear=True):
+            with redirect_stdout(out), redirect_stderr(err):
+                code = main(args)
+        return code, out.getvalue(), err.getvalue()
+
+    def _setup(self, tmp):
+        notes = tmp / "notes"
+        wiki = notes / "demo"
+        wiki.mkdir(parents=True)
+        (wiki / "label-index.ttl").write_text(
+            "@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .\n\n"
+            '<content.md> rdfs:label "Content" .\n'
+            '<linked.md> rdfs:label "Linked" .\n',
+            encoding="utf-8",
+        )
+        (wiki / "content.md").write_text(
+            "# Content\n\nSolar panels and power notes.\n", encoding="utf-8"
+        )
+        (wiki / "linked.md").write_text(
+            "# Linked\n\n- [Solar](https://example.com/solar/)\n",
+            encoding="utf-8",
+        )
+        fixture = tmp / "eval.json"
+        fixture.write_text(
+            json.dumps(
+                {
+                    "cases": [
+                        {
+                            "url": "https://example.com/solar/",
+                            "title": "solar power",
+                            "acceptable": ["demo/content.md"],
+                        },
+                        {
+                            "url": "https://example.com/solar/",
+                            "title": "solar power",
+                            "acceptable": ["demo/linked.md"],
+                        },
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        return notes, tmp / "state", fixture
+
+    def test_the_flag_switches_the_measured_verdict(self):
+        with tempfile.TemporaryDirectory() as directory:
+            tmp = Path(directory)
+            notes, state, fixture = self._setup(tmp)
+            self._run(["build"], notes, state)
+
+            code, out, err = self._run(
+                ["eval", "--fixture", str(fixture), "--json"], notes, state
+            )
+            flag_code, flag_out, flag_err = self._run(
+                [
+                    "eval",
+                    "--fixture",
+                    str(fixture),
+                    "--json",
+                    "--respect-existing-links",
+                ],
+                notes,
+                state,
+            )
+
+        default = json.loads(out)
+        respected = json.loads(flag_out)
+        self.assertEqual((code, err), (0, ""))
+        self.assertEqual((flag_code, flag_err), (0, ""))
+        self.assertEqual(default["existing_links"], "ignored")
+        self.assertEqual(
+            [case["rank"] for case in default["cases"]], [1, 2]
+        )
+        self.assertEqual(respected["existing_links"], "respected")
+        self.assertEqual(
+            [case["rank"] for case in respected["cases"]], [2, 1]
+        )

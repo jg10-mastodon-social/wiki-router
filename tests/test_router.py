@@ -271,6 +271,27 @@ class ReliabilityTests(unittest.TestCase):
 
 
 class CandidateTests(unittest.TestCase):
+    def test_candidates_report_whether_the_page_already_carries_the_url(self):
+        corpus = [
+            make_document(
+                id="linked.md", links=("https://example.com/soil/#top",)
+            ),
+            make_document(id="plain.md", links=("https://example.com/other",)),
+        ]
+
+        payload = route_payload(
+            corpus, "https://example.com/soil/", fetched=disabled()
+        )
+
+        by_id = {
+            candidate["id"]: candidate
+            for candidate in payload["candidates"]
+        }
+        self.assertTrue(by_id["linked.md"]["already_linked"])
+        self.assertEqual(by_id["linked.md"]["boosts"]["already_linked"], 0.4)
+        self.assertFalse(by_id["plain.md"]["already_linked"])
+        self.assertNotIn("already_linked", by_id["plain.md"]["boosts"])
+
     def test_candidates_carry_headings_and_summary(self):
         payload = route_payload(
             documents(), "https://example.com/soil/", fetched=disabled()

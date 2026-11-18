@@ -13,8 +13,13 @@ _GENERIC_SEGMENTS = frozenset(
     {"wiki", "wikimedia", "index", "home", "default", "view", "watch", "en", "details"}
 )
 _EXTENSION = re.compile(r"\.(html?|php|aspx?|md|txt)$", re.IGNORECASE)
+_INDEX_PAGE = re.compile(r"(?:^|/)index\.html?$", re.IGNORECASE)
 _SEPARATOR = re.compile(r"[^0-9A-Za-z]+")
 _YEAR = re.compile(r"^(19|20)\d\d$")
+
+# A page that already points at the URL is the strongest evidence that this is
+# where the link belongs: filing it again elsewhere would duplicate it.
+ALREADY_LINKED_BOOST = 0.4
 
 # Hosts that nearly every page links to, so one of these among a page's links
 # says nothing about the page's subject. Matched by hostname suffix.
@@ -75,7 +80,10 @@ class Candidate:
 
 
 def rank(
-    documents: Sequence[Document], query: Query, top: int = 5
+    documents: Sequence[Document],
+    query: Query,
+    top: int = 5,
+    respect_existing_links: bool = True,
 ) -> list[Candidate]:
     if top <= 0:
         return []
@@ -96,9 +104,12 @@ def rank(
     candidates = []
     for document in documents:
         cosine = _cosine(document, query_weights, query_norm, idf)
+        already_linked = _already_linked(document, normalised_url)
         boosts, heading_match, suggested = _boosts(
             document, query, query_set, host, normalised_url
         )
+        if already_linked and respect_existing_links:
+            boosts["already_linked"] = ALREADY_LINKED_BOOST
         score = round(cosine + sum(boosts.values()), 4)
         candidates.append(
             Candidate(
@@ -110,7 +121,7 @@ def rank(
                 cosine=round(cosine, 4),
                 boosts=boosts,
                 matched=tuple(sorted(query_set & document.terms.keys())[:8]),
-                already_linked=_already_linked(document, normalised_url),
+                already_linked=already_linked,
                 heading_match=heading_match,
                 suggested_section=suggested,
                 headings=document.headings,
@@ -140,6 +151,21 @@ def normalise_url(url: str) -> str:
         path = path[:-1]
 
     return urlunsplit((parts.scheme.lower(), netloc, path, parts.query, ""))
+
+
+def link_key(url: str) -> str:
+    """The identity of a URL for "this page already carries that link".
+
+    Built on :func:`normalise_url`, then drops what does not change which
+    document a link points at: the scheme (a page that wrote ``http`` still
+    links the same article as one that wrote ``https``), a trailing
+    ``index.html``, and the difference between a bare host and its root path.
+    """
+    parts = urlsplit(normalise_url(url))
+    path = _INDEX_PAGE.sub("", parts.path)
+    if path.endswith("/"):
+        path = path[:-1]
+    return urlunsplit(("", parts.netloc, path, parts.query, ""))
 
 
 def host_of(url: str) -> str:
@@ -331,4 +357,5 @@ def _shares_other_site(
 
 def _already_linked(document: Document, normalised_url: str) -> bool:
     keys = document.link_keys or _keys_of(document.links)
-    return normalised_url in keys
+    target = link_key(normalised_url)
+    return any(link_key(key) == target for key in keys)

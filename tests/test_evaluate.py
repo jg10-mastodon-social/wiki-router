@@ -11,7 +11,7 @@ from wikirc.text import tokenize
 FIXTURES = Path(__file__).parent / "fixtures"
 
 
-def make_document(id, label, terms):
+def make_document(id, label, terms, links=()):
     return Document(
         id=id,
         wiki="w",
@@ -19,7 +19,7 @@ def make_document(id, label, terms):
         subject=None,
         terms=tokenize(terms) if isinstance(terms, str) else terms,
         headings=(),
-        links=(),
+        links=links,
         text="",
     )
 
@@ -197,7 +197,7 @@ class EvaluateTests(unittest.TestCase):
 
         self.assertEqual(
             list(payload),
-            ["pages", "total", "top", "hit_at_1", "hit_at_top",
+            ["pages", "total", "top", "existing_links", "hit_at_1", "hit_at_top",
              "unmet_capabilities", "unclassified_misses", "cases"],
         )
         self.assertEqual(
@@ -293,3 +293,46 @@ class CaseBodyTests(unittest.TestCase):
                     acceptable=("w/a.md",), body="a study of futures")
         result = evaluate(docs, [case], top=3)
         self.assertEqual(result["hit_at_1"], 1)
+
+
+class ExistingLinkTests(unittest.TestCase):
+    def _documents(self):
+        return [
+            make_document("content.md", "Content", "solar panels and power"),
+            make_document(
+                "linked.md",
+                "Linked",
+                "linked solar",
+                links=("https://example.com/solar/",),
+            ),
+        ]
+
+    def _cases(self):
+        return [
+            Case(
+                url="https://example.com/solar/",
+                title="solar power",
+                acceptable=("content.md",),
+            ),
+            Case(
+                url="https://example.com/solar/",
+                title="solar power",
+                acceptable=("linked.md",),
+            ),
+        ]
+
+    def test_existing_links_are_ignored_by_default(self):
+        result = evaluate(self._documents(), self._cases())
+
+        self.assertEqual(result["existing_links"], "ignored")
+        self.assertEqual(result["cases"][0]["top"][0], "w/content.md")
+        self.assertEqual([case["rank"] for case in result["cases"]], [1, 2])
+
+    def test_respecting_existing_links_lets_the_linked_page_win(self):
+        result = evaluate(
+            self._documents(), self._cases(), respect_existing_links=True
+        )
+
+        self.assertEqual(result["existing_links"], "respected")
+        self.assertEqual(result["cases"][0]["top"][0], "w/linked.md")
+        self.assertEqual([case["rank"] for case in result["cases"]], [2, 1])

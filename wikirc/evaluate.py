@@ -8,6 +8,11 @@ identified by its wiki-qualified id (``garden/watering.md``); the bare index id
 The default fixture is ``tests/fixtures/eval.json``, resolved relative to the
 repository root (two levels up from this module). Real fixtures live outside
 the repository and are passed with ``--fixture``.
+
+The existing-link boost is ignored by default: a page that already carries the
+URL scores higher when routing, so leaving it on would flatter a fixture built
+from links that are already filed. ``--respect-existing-links`` turns it back on
+and the report says which way it was measured.
 """
 
 import json
@@ -66,6 +71,7 @@ def evaluate(
     top: int = 5,
     redirects: Mapping[str, str] = {},
     synonyms: Mapping[str, str] = {},
+    respect_existing_links: bool = False,
 ) -> dict:
     results = []
     hit_at_1 = 0
@@ -84,6 +90,7 @@ def evaluate(
                 body=case.body,
             ),
             top=top,
+            respect_existing_links=respect_existing_links,
         )
         if redirects:
             from .redirects import apply_redirects, page_key
@@ -127,6 +134,9 @@ def evaluate(
         "pages": len(documents),
         "total": len(cases),
         "top": top,
+        "existing_links": (
+            "respected" if respect_existing_links else "ignored"
+        ),
         "hit_at_1": hit_at_1,
         "hit_at_top": hit_at_top,
         "unmet_capabilities": unmet,

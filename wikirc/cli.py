@@ -77,6 +77,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="refuse to score when an aux map is missing",
     )
     evaluate_parser.add_argument(
+        "--respect-existing-links",
+        action="store_true",
+        dest="respect_existing_links",
+        help="let pages that already carry the URL outrank better content",
+    )
+    evaluate_parser.add_argument(
         "--json", action="store_true", dest="as_json", help="print JSON"
     )
 
@@ -117,6 +123,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.redirects,
             args.synonyms,
             args.require_aux,
+            args.respect_existing_links,
         )
     if args.command == "append":
         return _run_append(args)
@@ -220,6 +227,7 @@ def _run_eval(
     redirects: Path | None = None,
     synonyms_path: Path | None = None,
     require_aux: bool = False,
+    respect_existing_links: bool = False,
 ) -> int:
     try:
         config = load_config()
@@ -280,7 +288,12 @@ def _run_eval(
         return 2
 
     payload = evaluate.evaluate(
-        index.documents, cases, top=top, redirects=mapping, synonyms=synonyms
+        index.documents,
+        cases,
+        top=top,
+        redirects=mapping,
+        synonyms=synonyms,
+        respect_existing_links=respect_existing_links,
     )
     payload["fixture"] = str(path)
     payload["aux"] = aux

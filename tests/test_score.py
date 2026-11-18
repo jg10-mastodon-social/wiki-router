@@ -159,7 +159,7 @@ class LinkAndHeadingTests(unittest.TestCase):
         self.assertEqual(candidate.boosts["same_domain"], 0.1)
         self.assertFalse(candidate.already_linked)
 
-    def test_already_linked_is_a_flag_not_a_boost(self):
+    def test_already_linked_is_a_flag_and_a_named_boost(self):
         document = make_document(
             label="Archive",
             terms=tokenize("solar", bigrams=False),
@@ -170,8 +170,8 @@ class LinkAndHeadingTests(unittest.TestCase):
         candidate = rank([document], query)[0]
 
         self.assertTrue(candidate.already_linked)
-        self.assertNotIn("already_linked", candidate.boosts)
-        self.assertEqual(candidate.score, candidate.cosine)
+        self.assertEqual(candidate.boosts["already_linked"], 0.4)
+        self.assertEqual(candidate.score, round(candidate.cosine + 0.4, 4))
 
     def test_heading_match_sets_flag_and_boost(self):
         document = make_document(
@@ -186,6 +186,78 @@ class LinkAndHeadingTests(unittest.TestCase):
         self.assertTrue(candidate.heading_match)
         self.assertEqual(candidate.boosts["heading_match"], 0.05)
         self.assertEqual(candidate.suggested_section, "Solar power")
+
+
+class AlreadyLinkedBoostTests(unittest.TestCase):
+    def test_a_page_already_carrying_the_link_beats_better_content(self):
+        linked = make_document(
+            id="linked",
+            label="Archive",
+            terms={"solar": 1},
+            links=("https://example.com/solar/",),
+        )
+        better = make_document(
+            id="better",
+            label="Archive",
+            terms={"solar": 1, "power": 1},
+        )
+        query = Query(url="https://example.com/solar/", title="solar power")
+
+        candidates = rank([linked, better], query)
+
+        by_id = {candidate.id: candidate for candidate in candidates}
+        self.assertGreater(by_id["better"].cosine, by_id["linked"].cosine)
+        self.assertEqual(candidates[0].id, "linked")
+
+    def test_a_page_without_the_link_earns_no_boost(self):
+        document = make_document(
+            id="plain",
+            label="Archive",
+            terms={"solar": 1},
+            links=("https://example.com/b",),
+        )
+        query = Query(url="https://example.com/solar/", title="solar")
+
+        candidate = rank([document], query)[0]
+
+        self.assertFalse(candidate.already_linked)
+        self.assertNotIn("already_linked", candidate.boosts)
+
+
+class AlreadyLinkedNormalisationTests(unittest.TestCase):
+    def _linked(self, page_link, query_url):
+        document = make_document(
+            label="Archive", terms={"solar": 1}, links=(page_link,)
+        )
+        return rank([document], Query(url=query_url, title="solar"))[0]
+
+    def test_scheme_trailing_slash_and_fragment_do_not_change_the_link(self):
+        for page_link, query_url in (
+            ("https://example.com/a/", "http://example.com/a"),
+            ("http://example.com/a", "https://example.com/a/"),
+            ("https://example.com/a#section", "https://example.com/a"),
+        ):
+            with self.subTest(page_link=page_link, query_url=query_url):
+                candidate = self._linked(page_link, query_url)
+
+                self.assertTrue(candidate.already_linked)
+                self.assertEqual(candidate.boosts["already_linked"], 0.4)
+
+    def test_a_trailing_index_html_is_the_same_link(self):
+        candidate = self._linked(
+            "https://example.com/a/index.html", "https://example.com/a"
+        )
+
+        self.assertTrue(candidate.already_linked)
+        self.assertEqual(candidate.boosts["already_linked"], 0.4)
+
+    def test_a_different_path_on_the_same_host_is_not_the_same_link(self):
+        candidate = self._linked(
+            "https://example.com/b", "https://example.com/a"
+        )
+
+        self.assertFalse(candidate.already_linked)
+        self.assertNotIn("already_linked", candidate.boosts)
 
 
 class SuggestedSectionTests(unittest.TestCase):
