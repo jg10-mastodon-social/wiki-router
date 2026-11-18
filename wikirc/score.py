@@ -276,24 +276,28 @@ def _label_tokens(label: str) -> set[str]:
     return set(tokenize(label, bigrams=False))
 
 
-def _label_boost(label: str, query: Query, query_set: set[str]) -> dict[str, float]:
+def _label_boost(label: str, query: Query) -> dict[str, float]:
+    """Label evidence, taken from the URL's own identity only.
+
+    A title or slug says what the link is; a description or the caller's
+    context says why it is being filed. A label that happens to sit inside a
+    sentence about the link is not evidence that the page is about it.
+    """
     label_tokens = _label_tokens(label)
-    if label_tokens:
-        normalised = _collapse(label)
-        if normalised == _collapse(query.title) or normalised == _collapse(
-            slug_text(query.url)
-        ):
-            return {"label_exact": 0.5}
-        shared = label_tokens & query_set
-        if len(shared) / len(label_tokens) >= 0.6:
-            return {"label_most": 0.15}
-        if shared:
-            return {"label_contains": 0.05}
+    if not label_tokens:
+        return {}
+
+    identities = (
+        _label_tokens(query.title),
+        set(tokenize(slug_text(query.url), bigrams=False)),
+    )
+    if any(label_tokens == identity for identity in identities):
+        return {"label_exact": 0.5}
+    if any(label_tokens <= identity for identity in identities):
+        return {"label_most": 0.15}
+    if any(label_tokens & identity for identity in identities):
+        return {"label_contains": 0.05}
     return {}
-
-
-def _collapse(value: str) -> str:
-    return " ".join(value.casefold().split())
 
 
 def _boosts(
@@ -303,7 +307,7 @@ def _boosts(
     host: str,
     normalised_url: str,
 ) -> tuple[dict[str, float], bool, str | None]:
-    boosts = _label_boost(document.label, query, query_set)
+    boosts = _label_boost(document.label, query)
 
     if _shares_other_site(document, host, normalised_url):
         boosts["same_domain"] = 0.1

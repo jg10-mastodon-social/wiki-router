@@ -102,12 +102,14 @@ class LabelBoostTests(unittest.TestCase):
         self.assertEqual(candidates[0].boosts["label_exact"], 0.5)
         self.assertNotIn("label_exact", candidates[1].boosts)
 
-    def test_label_most_fires_at_sixty_percent(self):
+    def test_label_most_fires_when_the_slug_fully_contains_the_label(self):
         document = make_document(
-            label="Canal Solar Power Systems Guide",
+            label="Canal Solar Power",
             terms=tokenize("solar", bigrams=False),
         )
-        query = Query(url="https://example.com/canal-solar-power/")
+        query = Query(
+            url="https://example.com/canal-solar-power-systems-guide/"
+        )
 
         candidate = rank([document], query)[0]
 
@@ -143,6 +145,150 @@ class LabelBoostTests(unittest.TestCase):
             "label_contains",
         } & candidate.boosts.keys()
         self.assertEqual(present, {"label_exact"})
+
+
+class LabelIdentityTests(unittest.TestCase):
+    """Label evidence comes from the URL's own identity: title and slug."""
+
+    def test_a_label_found_only_in_the_context_earns_no_label_boost(self):
+        document = make_document(
+            label="Scenario Planning",
+            terms=tokenize("scenario", bigrams=False),
+        )
+        query = Query(
+            url="https://example.com/futures-review/",
+            title="inevitable surprises",
+            context="scenario planning turbulence",
+        )
+
+        candidate = rank([document], query)[0]
+
+        present = {
+            "label_exact",
+            "label_most",
+            "label_contains",
+        } & candidate.boosts.keys()
+        self.assertEqual(present, set())
+
+    def test_a_label_partly_in_the_title_earns_only_the_partial_tier(self):
+        document = make_document(
+            label="Responding To Surprise",
+            terms=tokenize("surprise", bigrams=False),
+        )
+        query = Query(
+            url="https://example.com/futures-review/",
+            title="inevitable surprises",
+            context="scenario planning turbulence",
+        )
+
+        candidate = rank([document], query)[0]
+
+        self.assertEqual(candidate.boosts["label_contains"], 0.05)
+        self.assertNotIn("label_exact", candidate.boosts)
+        self.assertNotIn("label_most", candidate.boosts)
+
+    def test_a_context_label_does_not_outrank_a_higher_cosine_rival(self):
+        context_label = make_document(
+            id="context-label",
+            label="Scenario Planning",
+            terms=tokenize("scenario planning", bigrams=False),
+        )
+        rival = make_document(
+            id="rival",
+            label="Field Notes",
+            terms=tokenize("scenario inevitable review", bigrams=False),
+        )
+        query = Query(
+            url="https://example.com/futures-review/",
+            title="inevitable surprises",
+            context="scenario planning turbulence",
+        )
+
+        candidates = rank([context_label, rival], query)
+
+        by_id = {candidate.id: candidate for candidate in candidates}
+        self.assertGreater(by_id["rival"].cosine, by_id["context-label"].cosine)
+        self.assertEqual(candidates[0].id, "rival")
+        self.assertNotIn("label_most", by_id["context-label"].boosts)
+
+    def test_exact_equality_with_the_title_is_still_exact(self):
+        document = make_document(
+            label="Tide Tables",
+            terms=tokenize("tide tables", bigrams=False),
+        )
+        query = Query(url="https://example.com/report/", title="Tide tables")
+
+        candidate = rank([document], query)[0]
+
+        self.assertEqual(candidate.boosts["label_exact"], 0.5)
+        self.assertNotIn("label_most", candidate.boosts)
+
+    def test_a_label_fully_inside_the_title_is_full_containment(self):
+        document = make_document(
+            label="Causal pathways",
+            terms=tokenize("causal pathways", bigrams=False),
+        )
+        query = Query(
+            url="https://example.com/report/",
+            title="Causal layered analysis pathways",
+        )
+
+        candidate = rank([document], query)[0]
+
+        self.assertEqual(candidate.boosts["label_most"], 0.15)
+        self.assertNotIn("label_exact", candidate.boosts)
+        self.assertNotIn("label_contains", candidate.boosts)
+
+    def test_a_label_found_only_in_the_description_earns_no_label_boost(self):
+        document = make_document(
+            label="Harbour Dredging",
+            terms=tokenize("harbour", bigrams=False),
+        )
+        query = Query(
+            url="https://example.com/report/",
+            title="Tide tables",
+            description="harbour dredging notes",
+        )
+
+        candidate = rank([document], query)[0]
+
+        present = {
+            "label_exact",
+            "label_most",
+            "label_contains",
+        } & candidate.boosts.keys()
+        self.assertEqual(present, set())
+
+    def test_a_whitespace_title_earns_no_label_boost_without_a_slug(self):
+        document = make_document(
+            label="Alpha Beta",
+            terms=tokenize("alpha", bigrams=False),
+        )
+        query = Query(
+            url="https://example.com/",
+            title="   ",
+            context="alpha beta",
+        )
+
+        candidate = rank([document], query)[0]
+
+        present = {
+            "label_exact",
+            "label_most",
+            "label_contains",
+        } & candidate.boosts.keys()
+        self.assertEqual(present, set())
+
+    def test_a_whitespace_title_still_lets_the_slug_supply_the_label(self):
+        document = make_document(
+            label="Tide Tables",
+            terms=tokenize("tide", bigrams=False),
+        )
+        query = Query(url="https://example.com/tide-tables/", title="   ")
+
+        candidate = rank([document], query)[0]
+
+        self.assertEqual(candidate.boosts["label_exact"], 0.5)
 
 
 class LinkAndHeadingTests(unittest.TestCase):
