@@ -307,7 +307,7 @@ class PageTermTests(unittest.TestCase):
     def test_url_fragments_are_not_indexed(self):
         page = Page(
             id="a.md", wiki="w", label="Alpha", subject=None,
-            local=Path("/tmp/a.md"), headings=(),
+            local=Path("a.md"), headings=(),
             links=("https://doi.org/10.1234/x",),
             text="# Alpha\n\n- [Beta gamma](https://example.com/beta-gamma)\n",
         )
