@@ -8,9 +8,33 @@ from urllib.parse import unquote, urlsplit, urlunsplit
 
 from .text import tokenize
 
-# Path segments that describe a site's structure rather than its subject.
+# Path segments that describe a site's structure rather than its subject: a wiki
+# says "wiki", a shop says "books" or "product", and a page per day says "page"
+# or a bare id. None of it is evidence about what the page is about, so a label
+# built from these words must not win a label tier on their strength.
 _GENERIC_SEGMENTS = frozenset(
-    {"wiki", "wikimedia", "index", "home", "default", "view", "watch", "en", "details"}
+    {
+        "wiki",
+        "wikimedia",
+        "index",
+        "home",
+        "default",
+        "view",
+        "watch",
+        "en",
+        "details",
+        "books",
+        "catalog",
+        "category",
+        "item",
+        "items",
+        "page",
+        "product",
+        "products",
+        "shop",
+        "store",
+        "tag",
+    }
 )
 _EXTENSION = re.compile(r"\.(html?|php|aspx?|md|txt)$", re.IGNORECASE)
 _INDEX_PAGE = re.compile(r"(?:^|/)index\.html?$", re.IGNORECASE)

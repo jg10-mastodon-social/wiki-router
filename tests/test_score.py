@@ -807,6 +807,93 @@ class SlugTextTests(unittest.TestCase):
             "canal solar power project",
         )
 
+    def test_storefront_segments_are_dropped_but_the_title_words_stay(self):
+        self.assertEqual(
+            slug_text("https://shop.example/books/42/inevitable-surprises/"),
+            "inevitable surprises",
+        )
+
+
+class StructuralSegmentTests(unittest.TestCase):
+    """A storefront's own structure is not the subject of its pages.
+
+    A bookshop URL carries the shop's directory and the book's id as well as
+    the work's title; a label made of the directory word is evidence about the
+    shop's layout, not about the work.
+    """
+
+    URL = "https://shop.example/books/42/inevitable-surprises/"
+
+    def _label_boosts(self, candidate):
+        return {
+            "label_exact",
+            "label_most",
+            "label_contains",
+        } & candidate.boosts.keys()
+
+    def test_a_directory_word_earns_no_label_boost(self):
+        directory = make_document(
+            id="a/books.md",
+            label="Books",
+            terms=tokenize("books shelved", bigrams=False),
+        )
+        subject = make_document(
+            id="a/futures.md",
+            label="Futures",
+            terms=tokenize("inevitable surprises", bigrams=False),
+        )
+
+        candidates = rank([directory, subject], Query(url=self.URL))
+
+        by_id = {candidate.id: candidate for candidate in candidates}
+        self.assertEqual(self._label_boosts(by_id["a/books.md"]), set())
+        self.assertEqual(candidates[0].id, "a/futures.md")
+
+    def test_a_second_structural_word_earns_no_label_boost(self):
+        document = make_document(
+            id="a/product-notes.md",
+            label="Product Notes",
+            terms=tokenize("product notes", bigrams=False),
+        )
+
+        candidate = rank([document], Query(url=self.URL))[0]
+
+        self.assertEqual(self._label_boosts(candidate), set())
+
+    def test_real_title_words_in_the_slug_still_earn_the_exact_tier(self):
+        document = make_document(
+            id="a/futures.md",
+            label="Inevitable Surprises",
+            terms=tokenize("inevitable surprises", bigrams=False),
+        )
+
+        candidate = rank([document], Query(url=self.URL))[0]
+
+        self.assertEqual(candidate.boosts["label_exact"], 0.5)
+        self.assertNotIn("label_most", candidate.boosts)
+
+    def test_a_numeric_id_earns_no_label_boost(self):
+        document = make_document(
+            id="a/42.md",
+            label="42",
+            terms=tokenize("inevitable", bigrams=False),
+        )
+
+        candidate = rank([document], Query(url=self.URL))[0]
+
+        self.assertEqual(self._label_boosts(candidate), set())
+
+    def test_a_numeric_label_still_matches_a_title_as_before(self):
+        document = make_document(
+            id="a/42.md",
+            label="42",
+            terms=tokenize("inevitable", bigrams=False),
+        )
+
+        candidate = rank([document], Query(url=self.URL, title="42"))[0]
+
+        self.assertEqual(candidate.boosts["label_exact"], 0.5)
+
 
 class ReferenceHostTests(unittest.TestCase):
     def _pair(self, linked_id, link):
