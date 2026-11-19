@@ -209,6 +209,75 @@ class WriteLoadTests(unittest.TestCase):
                 store.load(Path(tmp) / "state")
 
 
+def _write_index(state, data):
+    state = Path(state)
+    state.mkdir(parents=True, exist_ok=True)
+    path = state / "index.json"
+    path.write_text(json.dumps(data), encoding="utf-8")
+    return path
+
+
+class IndexFormatTests(unittest.TestCase):
+    def test_a_foreign_shape_names_the_file_and_both_versions(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = _write_index(
+                Path(tmp) / "state",
+                {"version": 5, "pages": 1, "page_list": []},
+            )
+
+            with self.assertRaises(store.IndexFormatError) as caught:
+                store.load(path.parent)
+
+        message = str(caught.exception)
+        self.assertIn("index.json", message)
+        self.assertIn("5", message)
+        self.assertIn(str(store.INDEX_VERSION), message)
+        self.assertNotIn("\n", message)
+        self.assertLess(len(message), 200)
+        self.assertEqual(caught.exception.path, path)
+        self.assertEqual(caught.exception.found, 5)
+        self.assertIsInstance(caught.exception, ValueError)
+
+    def test_a_missing_required_key_is_a_format_error_not_a_key_error(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = _write_index(
+                Path(tmp) / "state",
+                {"version": store.INDEX_VERSION, "pages": 0},
+            )
+
+            with self.assertRaises(store.IndexFormatError) as caught:
+                store.load(path.parent)
+
+        message = str(caught.exception)
+        self.assertIn("index.json", message)
+        self.assertIn(str(store.INDEX_VERSION), message)
+        self.assertNotIn("\n", message)
+        self.assertLess(len(message), 200)
+        self.assertEqual(caught.exception.path, path)
+
+    def test_a_file_without_a_version_reports_the_version_as_unknown(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            _write_index(Path(tmp) / "state", {"pages": 1, "page_list": []})
+
+            with self.assertRaises(store.IndexFormatError) as caught:
+                store.load(Path(tmp) / "state")
+
+        self.assertIn("unknown", str(caught.exception))
+        self.assertIsNone(caught.exception.found)
+
+    def test_a_current_format_index_still_loads(self):
+        payload = store.build(FIXTURES, None)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            state = Path(tmp) / "state"
+            store.write(payload, state)
+
+            loaded = store.load(state)
+
+        self.assertEqual(loaded.version, store.INDEX_VERSION)
+        self.assertEqual(loaded.pages, payload.pages)
+
+
 class PrecomputationTests(unittest.TestCase):
     def test_every_document_carries_its_tf_idf_norm(self):
         payload = store.build(FIXTURES, None)
@@ -343,6 +412,20 @@ class StalenessTests(unittest.TestCase):
             state = Path(tmp) / "state"
             state.mkdir()
             (state / "index.json").write_text("{not json", encoding="utf-8")
+
+            self.assertTrue(store.is_stale(FIXTURES, None, state))
+
+    def test_a_foreign_format_index_is_stale_not_an_error(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            state = Path(tmp) / "state"
+            _write_index(state, {"version": 5, "pages": 1, "page_list": []})
+
+            self.assertTrue(store.is_stale(FIXTURES, None, state))
+
+    def test_an_index_missing_required_keys_is_stale_not_an_error(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            state = Path(tmp) / "state"
+            _write_index(state, {"version": store.INDEX_VERSION})
 
             self.assertTrue(store.is_stale(FIXTURES, None, state))
 

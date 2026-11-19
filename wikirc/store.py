@@ -16,8 +16,42 @@ from .text import tokenize
 INDEX_VERSION = 3
 INDEX_NAME = "index.json"
 SUMMARY_LIMIT = 160
+REQUIRED_KEYS = (
+    "version",
+    "generated",
+    "notes",
+    "fingerprint",
+    "pages",
+    "documents",
+)
 
 _HEADING = re.compile(r"^#{1,6}(?:\s|$)")
+
+
+class IndexFormatError(ValueError):
+    """The persisted index is not a shape this build reads.
+
+    Carries the file and the version found so a caller can say so in one line;
+    the message stays short because the webhook truncates stderr at 500
+    characters and cut off the line that mattered.
+    """
+
+    def __init__(self, path, found, expected=INDEX_VERSION, missing=()):
+        self.path = Path(path)
+        self.found = found
+        self.expected = expected
+        self.missing = tuple(missing)
+        super().__init__(self._message())
+
+    def _message(self) -> str:
+        found = "unknown" if self.found is None else self.found
+        message = (
+            f"routing index at {self.path} is format {found}, "
+            f"this build reads format {self.expected}"
+        )
+        if self.missing:
+            message += f"; missing {', '.join(self.missing)}"
+        return message
 
 
 @dataclass(frozen=True)
@@ -117,7 +151,9 @@ def write(payload: IndexPayload, state: Path) -> Path:
 
 
 def load(state: Path) -> IndexPayload:
-    data = json.loads((Path(state) / INDEX_NAME).read_text(encoding="utf-8"))
+    path = Path(state) / INDEX_NAME
+    data = json.loads(path.read_text(encoding="utf-8"))
+    _check_format(data, path)
     return IndexPayload(
         version=data["version"],
         generated=data["generated"],
@@ -126,6 +162,19 @@ def load(state: Path) -> IndexPayload:
         pages=data["pages"],
         documents=tuple(_document_from_dict(item) for item in data["documents"]),
     )
+
+
+def _check_format(data, path: Path) -> None:
+    if not isinstance(data, dict):
+        raise IndexFormatError(path, None)
+
+    found = data.get("version")
+    if found != INDEX_VERSION:
+        raise IndexFormatError(path, found)
+
+    missing = [key for key in REQUIRED_KEYS if key not in data]
+    if missing:
+        raise IndexFormatError(path, found, missing=missing)
 
 
 def is_stale(notes: Path, pod_base: str | None, state: Path) -> bool:

@@ -9,6 +9,7 @@ from dataclasses import replace
 from pathlib import Path
 from unittest import mock
 
+from wikirc import store
 from wikirc.cli import build_parser, main
 from wikirc.fetch import FetchResult
 
@@ -425,6 +426,53 @@ class RouteCommandTests(unittest.TestCase):
         self.assertEqual(out, "")
         self.assertEqual(err, "routing index missing: run build\n")
 
+    def test_route_with_a_foreign_index_reports_one_line_and_no_traceback(self):
+        with tempfile.TemporaryDirectory() as state:
+            index = Path(state) / "index.json"
+            index.write_text(
+                json.dumps({"version": 5, "pages": 1, "page_list": []}),
+                encoding="utf-8",
+            )
+
+            code, out, err = self._run(
+                ["route", "https://example.com/watering/", "--json"],
+                FIXTURES,
+                state,
+            )
+
+        lines = err.splitlines()
+        self.assertEqual(code, 1)
+        self.assertEqual(out, "")
+        self.assertEqual(len(lines), 1, err)
+        self.assertTrue(lines[0].startswith("wiki-router: "), err)
+        self.assertIn(str(index), lines[0])
+        self.assertIn("format 5", lines[0])
+        self.assertIn(f"format {store.INDEX_VERSION}", lines[0])
+        self.assertIn("rebuild", lines[0])
+        self.assertNotIn("Traceback", err)
+
+    def test_route_with_a_current_format_index_still_routes(self):
+        with tempfile.TemporaryDirectory() as state:
+            self._run(["build"], FIXTURES, state)
+
+            code, out, err = self._run(
+                [
+                    "route",
+                    "https://example.com/watering/",
+                    "--no-fetch",
+                    "--json",
+                ],
+                FIXTURES,
+                state,
+            )
+
+        self.assertEqual(code, 0)
+        self.assertEqual(err, "")
+        self.assertIn(
+            "watering.md",
+            [candidate["id"] for candidate in json.loads(out)["candidates"]],
+        )
+
     def test_route_with_a_stale_index_warns_and_still_routes(self):
         with tempfile.TemporaryDirectory() as tmp:
             notes = Path(tmp) / "notes"
@@ -557,6 +605,25 @@ class EvalCommandTests(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertEqual(out, "")
         self.assertEqual(err, "routing index missing: run build\n")
+
+    def test_eval_with_a_foreign_index_reports_one_line_and_no_traceback(self):
+        with tempfile.TemporaryDirectory() as state:
+            index = Path(state) / "index.json"
+            index.write_text(
+                json.dumps({"version": 5, "pages": 1, "page_list": []}),
+                encoding="utf-8",
+            )
+
+            code, out, err = self._run(["eval"], FIXTURES, state)
+
+        lines = err.splitlines()
+        self.assertEqual(code, 1)
+        self.assertEqual(out, "")
+        self.assertEqual(len(lines), 1, err)
+        self.assertTrue(lines[0].startswith("wiki-router: "), err)
+        self.assertIn(str(index), lines[0])
+        self.assertIn("rebuild", lines[0])
+        self.assertNotIn("Traceback", err)
 
     def test_eval_without_environment_reports_two(self):
         out = io.StringIO()

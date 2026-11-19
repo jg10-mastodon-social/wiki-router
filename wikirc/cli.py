@@ -204,6 +204,15 @@ def _aux_status(path: Path) -> str:
     return "loaded" if Path(path).is_file() else "missing"
 
 
+def _report_index_format(error: store.IndexFormatError) -> int:
+    """One line, no traceback: the caller truncates stderr."""
+    print(
+        f"wiki-router: {error}; rebuild with 'wiki-router build'",
+        file=sys.stderr,
+    )
+    return 1
+
+
 def _load_redirects(path: Path) -> dict[str, str] | None:
     try:
         return load_redirects(path)
@@ -256,6 +265,8 @@ def _run_eval(
     except FileNotFoundError:
         print("routing index missing: run build", file=sys.stderr)
         return 1
+    except store.IndexFormatError as error:
+        return _report_index_format(error)
 
     try:
         cases = evaluate.load_cases(path)
@@ -357,6 +368,8 @@ def _run_route(args: argparse.Namespace) -> int:
     except FileNotFoundError:
         print("routing index missing: run build", file=sys.stderr)
         return 1
+    except store.IndexFormatError as error:
+        return _report_index_format(error)
 
     if store.is_stale(config.notes, config.pod_base, config.state):
         print("warning: index is stale; run build", file=sys.stderr)
